@@ -518,3 +518,60 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .support-panel > form input { font-size: 16px; }
   .toast { right: 12px; bottom: calc(145px + env(safe-area-inset-bottom)); max-width: calc(100vw - 24px); }
 }
+
+/* Functional open-source mapping controls */
+.osm-search { position: absolute; z-index: 920; left: 14px; top: 14px; width: min(410px, calc(100% - 325px)); height: 44px; display: flex; align-items: center; padding: 0 4px 0 10px; border: 1px solid #bacbd1; border-radius: 8px; background: rgba(255,255,255,.97); box-shadow: 0 5px 18px rgba(20,72,91,.16); }
+.osm-search > span { color: var(--nla-blue-deep); font-size: 19px; }
+.osm-search input { min-width: 0; flex: 1; border: 0; outline: 0; padding: 0 8px; color: var(--ink); background: transparent; font-size: 10px; }
+.osm-search button { height: 34px; padding: 0 13px; border: 0; border-radius: 6px; color: white; background: var(--nla-blue-deep); font-size: 8px; font-weight: 800; }
+.osm-search button:disabled { background: #9db9c3; }
+.osm-search-results { position: absolute; z-index: 930; left: 14px; top: 64px; width: min(410px, calc(100% - 28px)); max-height: 330px; overflow-y: auto; border: 1px solid var(--line); border-radius: 9px; background: white; box-shadow: 0 15px 38px rgba(20,72,91,.22); }
+.osm-search-results > p { margin: 0; padding: 13px; color: #8c3f39; font-size: 9px; }
+.osm-search-results > button { width: 100%; min-height: 52px; display: grid; grid-template-columns: 31px 1fr auto; align-items: center; gap: 9px; padding: 8px 10px; border: 0; border-bottom: 1px solid var(--soft-line); color: var(--ink); background: white; text-align: left; }
+.osm-search-results > button:hover { background: var(--green-50); }
+.osm-search-results > button > span { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 6px; color: var(--nla-blue-deep); background: var(--green-50); font-family: var(--font-plex-mono); font-size: 7px; }
+.osm-search-results b, .osm-search-results small { display: block; }
+.osm-search-results b { font-size: 9px; }
+.osm-search-results small { margin-top: 3px; color: var(--muted); font-size: 7px; font-weight: 400; }
+.osm-search-results i { color: var(--nla-blue-deep); font-size: 17px; font-style: normal; }
+.osm-basemap-switcher { position: absolute; z-index: 920; right: 14px; top: 14px; height: 44px; display: grid; grid-template-columns: repeat(3, auto); padding: 4px; border: 1px solid #bacbd1; border-radius: 8px; background: rgba(255,255,255,.97); box-shadow: 0 5px 18px rgba(20,72,91,.15); }
+.osm-basemap-switcher button { min-width: 69px; border: 0; border-radius: 5px; color: #526b74; background: transparent; font-size: 8px; font-weight: 700; }
+.osm-basemap-switcher button.active { color: white; background: var(--nla-blue-deep); }
+.osm-map-tools { position: absolute; z-index: 920; right: 14px; top: 67px; display: grid; grid-template-columns: repeat(2, 36px); overflow: hidden; border: 1px solid #bacbd1; border-radius: 8px; background: white; box-shadow: 0 5px 18px rgba(20,72,91,.16); }
+.osm-map-tools button { width: 36px; height: 36px; border: 0; border-right: 1px solid var(--soft-line); border-bottom: 1px solid var(--soft-line); color: #526b74; background: white; font-family: var(--font-plex-mono); font-size: 7px; font-weight: 700; }
+.osm-map-tools button:hover, .osm-map-tools button.active { color: white; background: var(--nla-blue-deep); }
+.osm-map-tools button:disabled { color: #abb9be; background: #f3f6f7; cursor: not-allowed; }
+.osm-refresh-places { position: absolute; z-index: 910; right: 14px; top: 222px; min-height: 34px; padding: 0 10px; border: 1px solid rgba(8,127,174,.25); border-radius: 7px; color: var(--nla-blue-deep); background: rgba(255,255,255,.95); box-shadow: 0 4px 14px rgba(20,72,91,.12); font-size: 8px; font-weight: 800; }
+.osm-measurement { position: absolute; z-index: 910; left: 14px; bottom: 45px; min-width: 210px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px; padding: 8px 9px; border: 1px solid rgba(8,127,174,.25); border-radius: 8px; color: var(--ink); background: rgba(255,255,255,.96); box-shadow: 0 5px 18px rgba(20,72,91,.15); }
+.osm-measurement span { color: var(--nla-blue-deep); font-size: 7px; font-weight: 800; text-transform: uppercase; }
+.osm-measurement b { font-family: var(--font-plex-mono); font-size: 9px; }
+.osm-measurement button { height: 27px; border: 0; border-radius: 5px; color: white; background: var(--nla-green); font-size: 7px; font-weight: 800; }
+.osm-popup-content strong, .osm-popup-content span { display: block; }
+.osm-popup-content strong { color: var(--ink); font-family: var(--font-plex-mono); font-size: 10px; }
+.osm-popup-content span { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.osm-map-shell:fullscreen { min-height: 100vh; background: #dce8eb; }
+.osm-map-shell:fullscreen .osm-map-canvas { min-height: 100vh; }
+.open-map-note { margin: 12px 0 2px; padding: 10px; display: flex; align-items: center; gap: 9px; border: 1px solid rgba(31,159,209,.2); border-radius: 7px; background: var(--green-50); }
+.open-map-note > span { width: 29px; height: 29px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 6px; color: white; background: var(--nla-blue-deep); font-family: var(--font-plex-mono); font-size: 7px; }
+.open-map-note p { margin: 0; }
+.open-map-note b, .open-map-note small { display: block; }
+.open-map-note b { font-size: 8px; }
+.open-map-note small { margin-top: 3px; color: var(--muted); font-size: 7px; line-height: 1.45; }
+.support-launcher { min-width: 148px; }
+
+@media (max-width: 640px) {
+  .osm-search { left: 10px; top: 10px; width: calc(100% - 20px); }
+  .osm-search input { font-size: 16px; }
+  .osm-search button { width: 42px; padding: 0; overflow: hidden; font-size: 0; }
+  .osm-search button:after { content: "⌕"; font-size: 17px; }
+  .osm-search-results { left: 10px; top: 59px; width: calc(100% - 20px); max-height: 270px; }
+  .osm-basemap-switcher { left: 10px; right: 10px; top: 62px; grid-template-columns: repeat(3, 1fr); }
+  .osm-basemap-switcher button { min-width: 0; }
+  .osm-map-tools { right: 10px; top: 114px; grid-template-columns: repeat(2, 40px); }
+  .osm-map-tools button { width: 40px; height: 40px; }
+  .osm-map-shell .leaflet-control-zoom { margin-top: 112px; margin-left: 10px; }
+  .osm-refresh-places { left: 61px; right: auto; top: 114px; max-width: calc(100% - 158px); }
+  .osm-measurement { left: 10px; bottom: 54px; min-width: 0; max-width: calc(100% - 20px); }
+  .osm-map-status { bottom: 27px; }
+  .support-launcher { min-width: 54px; }
+}

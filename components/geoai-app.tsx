@@ -11,7 +11,7 @@ type Message = { id: number; role: "assistant" | "user"; text: string; sources?:
 const navGroups: { label: string; items: { key: PageKey; label: string; mark: string }[] }[] = [
   { label: "Workspace", items: [
     { key: "dashboard", label: "Dashboard", mark: "DB" },
-    { key: "assistant", label: "GeoAI Assistant", mark: "AI" },
+    { key: "assistant", label: "NLA GeoAI", mark: "AI" },
     { key: "map", label: "Interactive Map", mark: "MP" },
     { key: "parcels", label: "Parcels", mark: "PC" },
     { key: "analysis", label: "GIS Analysis", mark: "GA" },
@@ -32,7 +32,7 @@ const navGroups: { label: string; items: { key: PageKey; label: string; mark: st
 
 const titles: Record<PageKey, { eyebrow: string; title: string; subtitle: string }> = {
   dashboard: { eyebrow: "Operational overview", title: "Good evening, Aline", subtitle: "Here is the current state of the GeoAI prototype workspace." },
-  assistant: { eyebrow: "Decision support", title: "GeoAI Assistant", subtitle: "Ask questions across parcels, GIS layers, NSDI metadata and verified demo documents." },
+  assistant: { eyebrow: "Decision support", title: "NLA GeoAI Assistant", subtitle: "Ask questions across parcels, GIS layers, NSDI metadata and verified demo documents." },
   map: { eyebrow: "Geospatial workspace", title: "Interactive Map", subtitle: "Explore synthetic parcel geometry and prototype national reference layers." },
   parcels: { eyebrow: "Land intelligence", title: "Parcel Registry", subtitle: "Search and inspect non-sensitive synthetic cadastral records." },
   analysis: { eyebrow: "Approved spatial tools", title: "GIS Analysis", subtitle: "Run controlled proximity, intersection and impact workflows." },
@@ -89,7 +89,7 @@ export default function GeoAIApp() {
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
         <div className="brand-block">
           <Image className="nla-brand-logo" src="/nla-logo.png" alt="National Land Authority" width={1043} height={541} priority />
-          <div className="brand-copy"><strong>GeoAI Workspace</strong><small>Intelligent land & geospatial assistant</small></div>
+          <div className="brand-copy"><strong>NLA GeoAI Workspace</strong><small>Intelligent land & geospatial assistant</small></div>
           <button className="sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Close navigation">×</button>
         </div>
         <div className="prototype-chip"><span /> Prototype · Internal concept</div>
@@ -178,19 +178,19 @@ function GeoAISupportBubble({ onNavigate }: { onNavigate: (page: PageKey) => voi
     {open && <section className="support-panel" role="dialog" aria-label="NLA GeoAI support" id="geoai-support-panel">
       <header><div><span>✦</span><p><b>NLA GeoAI Support</b><small><i /> Prototype assistant online</small></p></div><button onClick={() => setOpen(false)} aria-label="Close GeoAI support">×</button></header>
       <div className="support-messages" aria-live="polite">
-        {messages.map((message) => <div className={`support-message ${message.role}`} key={message.id}><small>{message.role === "assistant" ? "GEOAI" : "YOU"}</small><p>{message.text}</p>{message.warning && <em>Officer verification required</em>}</div>)}
+        {messages.map((message) => <div className={`support-message ${message.role}`} key={message.id}><small>{message.role === "assistant" ? "NLA GEOAI" : "YOU"}</small><p>{message.text}</p>{message.warning && <em>Officer verification required</em>}</div>)}
       </div>
       <div className="support-actions"><button onClick={() => { setOpen(false); onNavigate("map"); }}><span>MP</span>Open street map</button><button onClick={() => ask("Calculate the area of parcel 1/02/03/04/0012.")}><span>PC</span>Check parcel 0012</button></div>
       <form onSubmit={(event) => { event.preventDefault(); ask(input); }}><input aria-label="Ask NLA GeoAI support" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask about parcels or land data…" /><button disabled={!input.trim()} aria-label="Send support question">↑</button></form>
       <button className="support-full-link" onClick={() => { setOpen(false); onNavigate("assistant"); }}>Open full GeoAI workspace →</button>
     </section>}
-    <button className="support-launcher" aria-expanded={open} aria-controls="geoai-support-panel" onClick={() => setOpen((current) => !current)}><span>✦</span><b>{open ? "Close" : "Ask GeoAI"}</b>{!open && <i>1</i>}</button>
+    <button className="support-launcher" aria-expanded={open} aria-controls="geoai-support-panel" onClick={() => setOpen((current) => !current)}><span>✦</span><b>{open ? "Close" : "Ask NLA GeoAI"}</b>{!open && <i>1</i>}</button>
   </div>;
 }
 
 function PageIntro({ page, onAsk }: { page: PageKey; onAsk: () => void }) {
   const info = titles[page];
-  return <section className="page-intro"><div><p>{info.eyebrow}</p><h1>{info.title}</h1><span>{info.subtitle}</span></div>{page !== "assistant" && <button className="primary-button" onClick={onAsk}><span>✦</span> Ask GeoAI</button>}</section>;
+  return <section className="page-intro"><div><p>{info.eyebrow}</p><h1>{info.title}</h1><span>{info.subtitle}</span></div>{page !== "assistant" && <button className="primary-button" onClick={onAsk}><span>✦</span> Ask NLA GeoAI</button>}</section>;
 }
 
 function Dashboard({ onNavigate, notify }: { onNavigate: (p: PageKey) => void; notify: (s: string) => void }) {
@@ -261,33 +261,16 @@ function AssistantPage({ onOpenMap, notify }: { onOpenMap: () => void; notify: (
 
 function ContextItem({ mark, title, meta, status }: { mark: string; title: string; meta: string; status: string }) { return <div className="context-item"><span>{mark}</span><p><b>{title}</b><small>{meta}</small></p><em>{status}</em></div>; }
 
-function ParcelMap({ compact = false, selected, onSelect, visibleLayers, resetViewSignal }: { compact?: boolean; selected?: Parcel; onSelect?: (p: Parcel) => void; visibleLayers?: Partial<MapLayerVisibility>; resetViewSignal?: number }) {
-  return <OpenStreetMap compact={compact} selected={selected} onSelect={onSelect} visibleLayers={visibleLayers} resetViewSignal={resetViewSignal} />;
+function ParcelMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers }: { compact?: boolean; selected?: Parcel; onSelect?: (p: Parcel) => void; onClearSelection?: () => void; onNotify?: (message: string) => void; visibleLayers?: Partial<MapLayerVisibility> }) {
+  return <OpenStreetMap compact={compact} selected={selected} onSelect={onSelect} onClearSelection={onClearSelection} onNotify={onNotify} visibleLayers={visibleLayers} />;
 }
 
 function MapPage({ notify }: { notify: (s: string) => void }) {
   const [selected, setSelected] = useState<Parcel | undefined>(parcels[0]);
-  const [layers, setLayers] = useState({ parcels: true, roads: true, wetlands: true, zoning: false, buildings: false, boundaries: true });
-  const [query, setQuery] = useState("");
-  const [searchError, setSearchError] = useState("");
-  const [resetViewSignal, setResetViewSignal] = useState(0);
+  const [layers, setLayers] = useState<MapLayerVisibility>({ parcels: true, osmPlaces: false, zoning: false, boundaries: true });
 
-  function searchMap(event: FormEvent) {
-    event.preventDefault();
-    const term = query.trim().toLowerCase();
-    if (!term) return;
-    const match = parcels.find((parcel) => `${parcel.upi} ${parcel.district} ${parcel.sector} ${parcel.cell}`.toLowerCase().includes(term));
-    if (!match) {
-      setSearchError("No matching prototype parcel found.");
-      return;
-    }
-    setSelected(match);
-    setSearchError("");
-    notify(`Map centred on parcel ${match.upi}`);
-  }
-
-  return <div className="map-workspace"><div className="map-main"><ParcelMap selected={selected} onSelect={setSelected} visibleLayers={layers} resetViewSignal={resetViewSignal} /><div className="map-toolbar"><button className="active" title="Select parcels" aria-label="Select parcels">↖</button><button title="Reset to Kigali" aria-label="Reset map to Kigali" onClick={() => setResetViewSignal((value) => value + 1)}>⌂</button><button title="Clear selection" aria-label="Clear parcel selection" onClick={() => setSelected(undefined)}>×</button></div><form className="map-search" onSubmit={searchMap}><span>⌕</span><input aria-label="Search map" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search UPI, district or sector…" /><button aria-label="Search map records">Search</button>{searchError && <em>{searchError}</em>}</form><div className="map-provider-badge"><i />OpenStreetMap</div></div>
-    <aside className="map-side"><div className="map-tabs"><button className="active">Layers</button><button>Legend</button></div><div className="layer-group"><h3>Reference layers <span>−</span></h3><LayerToggle label="Administrative boundaries" sub="Province · District · Sector" checked={layers.boundaries} onChange={() => setLayers({ ...layers, boundaries: !layers.boundaries })} /><LayerToggle label="National road network" sub="Primary and secondary roads" checked={layers.roads} onChange={() => setLayers({ ...layers, roads: !layers.roads })} /></div><div className="layer-group"><h3>Land intelligence <span>−</span></h3><LayerToggle label="Sample cadastral parcels" sub="128 synthetic records" checked={layers.parcels} onChange={() => setLayers({ ...layers, parcels: !layers.parcels })} /><LayerToggle label="Land-use zoning" sub="Prototype classification" checked={layers.zoning} onChange={() => setLayers({ ...layers, zoning: !layers.zoning })} /><LayerToggle label="Building footprints" sub="Demonstration layer" checked={layers.buildings} onChange={() => setLayers({ ...layers, buildings: !layers.buildings })} /></div><div className="layer-group"><h3>Environment <span>−</span></h3><LayerToggle label="National wetlands" sub="Catalogue reference" checked={layers.wetlands} onChange={() => setLayers({ ...layers, wetlands: !layers.wetlands })} /></div>
+  return <div className="map-workspace"><div className="map-main"><ParcelMap selected={selected} onSelect={setSelected} onClearSelection={() => setSelected(undefined)} onNotify={notify} visibleLayers={layers} /></div>
+    <aside className="map-side"><div className="map-tabs"><button className="active">Layers</button><button>Open data</button></div><div className="open-map-note"><span>OS</span><p><b>Open mapping stack</b><small>OSM streets · OpenTopoMap · NASA Earth imagery</small></p></div><div className="layer-group"><h3>Open data <span>−</span></h3><LayerToggle label="Live OSM places" sub="Schools · health · government · markets" checked={layers.osmPlaces} onChange={() => setLayers({ ...layers, osmPlaces: !layers.osmPlaces })} /></div><div className="layer-group"><h3>NLA demo context <span>−</span></h3><LayerToggle label="Prototype coverage" sub="Kigali demonstration boundary" checked={layers.boundaries} onChange={() => setLayers({ ...layers, boundaries: !layers.boundaries })} /><LayerToggle label="Synthetic cadastral parcels" sub="128 non-sensitive demonstration records" checked={layers.parcels} onChange={() => setLayers({ ...layers, parcels: !layers.parcels })} /><LayerToggle label="Demo planning zone" sub="Illustrative classification only" checked={layers.zoning} onChange={() => setLayers({ ...layers, zoning: !layers.zoning })} /></div>
       {selected && <div className="selected-card"><div className="selected-head"><span>Selected parcel</span><button onClick={() => setSelected(undefined)}>×</button></div><h3>{selected.upi}</h3><dl><div><dt>District</dt><dd>{selected.district}</dd></div><div><dt>Sector</dt><dd>{selected.sector}</dd></div><div><dt>Area</dt><dd>{selected.area.toLocaleString()} m²</dd></div><div><dt>Land use</dt><dd>{selected.landUse}</dd></div><div><dt>Zoning</dt><dd>{selected.zoning}</dd></div><div><dt>Status</dt><dd><i />{selected.status}</dd></div></dl><button className="primary-button full" onClick={() => notify(`Parcel ${selected.upi} added to the analysis workspace`)}>Analyse parcel</button></div>}
     </aside></div>;
 }

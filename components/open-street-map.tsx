@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { LayerGroup, Map as LeafletMap } from "leaflet";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import type { LayerGroup, Map as LeafletMap, TileLayer } from "leaflet";
 import { parcels, type Parcel } from "@/lib/data";
 
 export type MapLayerVisibility = {
   parcels: boolean;
-  roads: boolean;
-  wetlands: boolean;
+  osmPlaces: boolean;
   zoning: boolean;
-  buildings: boolean;
   boundaries: boolean;
 };
 
@@ -17,11 +15,20 @@ type OpenStreetMapProps = {
   compact?: boolean;
   selected?: Parcel;
   onSelect?: (parcel: Parcel) => void;
+  onClearSelection?: () => void;
+  onNotify?: (message: string) => void;
   visibleLayers?: Partial<MapLayerVisibility>;
-  resetViewSignal?: number;
 };
 
+type BasemapKey = "street" | "topographic" | "satellite";
+type MapTool = "select" | "distance" | "area";
+type SearchResult = { id: string; name: string; description: string; category: string; lat: number; lon: number };
+type OsmFeature = { id: string; name: string; category: string; lat: number; lon: number };
+type PhotonFeature = { geometry?: { coordinates?: [number, number] }; properties?: { osm_id?: number; osm_type?: string; osm_key?: string; osm_value?: string; type?: string; name?: string; street?: string; district?: string; city?: string; state?: string; countrycode?: string } };
+type OverpassElement = { id: number; type: string; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string> };
+
 const KIGALI_CENTER: [number, number] = [-1.9536, 30.0606];
+const RWANDA_BOUNDS: [[number, number], [number, number]] = [[-2.85, 28.86], [-1.05, 30.9]];
 const DISTRICT_CENTERS: Record<string, [number, number]> = {
   Gasabo: [-1.9325, 30.1015],
   Kicukiro: [-1.9858, 30.1072],
@@ -29,6 +36,30 @@ const DISTRICT_CENTERS: Record<string, [number, number]> = {
   Musanze: [-1.4998, 29.6344],
   Huye: [-2.5967, 29.7398],
   Bugesera: [-2.1412, 30.0804],
+};
+
+const BASEMAPS: Record<BasemapKey, { label: string; detail: string; url: string; attribution: string; maxNativeZoom: number }> = {
+  street: {
+    label: "OSM Street",
+    detail: "Open community street map",
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
+    maxNativeZoom: 19,
+  },
+  topographic: {
+    label: "OpenTopoMap",
+    detail: "Terrain and elevation context",
+    url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+    attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>, SRTM | Map style &copy; <a href="https://opentopomap.org" target="_blank" rel="noreferrer">OpenTopoMap</a> (CC-BY-SA)',
+    maxNativeZoom: 17,
+  },
+  satellite: {
+    label: "NASA Earth",
+    detail: "VIIRS true colour · 08 Aug 2026",
+    url: "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/2026-08-08/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg",
+    attribution: 'Imagery &copy; <a href="https://www.earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA EOSDIS GIBS</a>',
+    maxNativeZoom: 9,
+  },
 };
 
 const LAND_USE_COLORS: Record<Parcel["landUse"], string> = {
@@ -50,26 +81,114 @@ function parcelShape(parcel: Parcel, index: number): [number, number][] {
   const [lat, lng] = parcelCenter(parcel, index);
   const size = Math.min(0.0028, 0.00115 + parcel.area / 8_000_000);
   const skew = ((index % 4) - 1.5) * 0.00018;
-  return [
-    [lat - size, lng - size + skew],
-    [lat - size * 0.72, lng + size],
-    [lat + size, lng + size * 0.8 - skew],
-    [lat + size * 0.82, lng - size],
-  ];
+  return [[lat - size, lng - size + skew], [lat - size * 0.72, lng + size], [lat + size, lng + size * 0.8 - skew], [lat + size * 0.82, lng - size]];
 }
 
-export default function OpenStreetMap({ compact = false, selected, onSelect, visibleLayers, resetViewSignal = 0 }: OpenStreetMapProps) {
+function popupContent(title: string, detail: string) {
+  const content = document.createElement("div");
+  const heading = document.createElement("strong");
+  const description = document.createElement("span");
+  heading.textContent = title;
+  description.textContent = detail;
+  content.className = "osm-popup-content";
+  content.append(heading, description);
+  return content;
+}
+
+function polygonArea(points: { lat: number; lng: number }[]) {
+  if (points.length < 3) return 0;
+  const radius = 6_378_137;
+  const radians = (value: number) => value * Math.PI / 180;
+  let area = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    area += radians(next.lng - current.lng) * (2 + Math.sin(radians(current.lat)) + Math.sin(radians(next.lat)));
+  }
+  return Math.abs(area * radius * radius / 2);
+}
+
+function normalizePhotonResults(features: PhotonFeature[]) {
+  return features.flatMap((feature) => {
+    const coordinates = feature.geometry?.coordinates;
+    const properties = feature.properties;
+    if (!coordinates || !properties?.name || properties.countrycode?.toLowerCase() !== "rw") return [];
+    const [lon, lat] = coordinates;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+    const location = [properties.street, properties.district, properties.city, properties.state].filter((value, index, all) => value && all.indexOf(value) === index).join(" · ");
+    return [{ id: `${properties.osm_type ?? "OSM"}/${properties.osm_id ?? `${lat}-${lon}`}`, name: properties.name, description: location || `${properties.osm_key ?? "place"} · Rwanda`, category: properties.osm_value ?? properties.type ?? properties.osm_key ?? "place", lat, lon }];
+  }).slice(0, 8);
+}
+
+function normalizeOverpassFeatures(elements: OverpassElement[]) {
+  return elements.flatMap((element) => {
+    const lat = element.lat ?? element.center?.lat;
+    const lon = element.lon ?? element.center?.lon;
+    if (typeof lat !== "number" || typeof lon !== "number") return [];
+    const tags = element.tags ?? {};
+    return [{ id: `${element.type}/${element.id}`, name: tags.name ?? tags.amenity ?? tags.office ?? tags.tourism ?? "Mapped place", category: tags.amenity ?? tags.office ?? tags.tourism ?? "place", lat, lon }];
+  }).slice(0, 80);
+}
+
+async function searchPhotonDirect(query: string) {
+  const endpoint = new URL("https://photon.komoot.io/api/");
+  endpoint.searchParams.set("q", query);
+  endpoint.searchParams.set("limit", "12");
+  endpoint.searchParams.set("lang", "en");
+  endpoint.searchParams.set("bbox", "28.8,-2.9,30.9,-1.0");
+  const response = await fetch(endpoint);
+  if (!response.ok) throw new Error("Open map search is unavailable.");
+  const data = await response.json() as { features?: PhotonFeature[] };
+  return normalizePhotonResults(data.features ?? []);
+}
+
+async function loadOverpassFeaturesDirect(lat: number, lon: number, signal: AbortSignal) {
+  const query = `[out:json][timeout:18];
+(
+  nwr(around:1200,${lat.toFixed(6)},${lon.toFixed(6)})["amenity"~"hospital|clinic|pharmacy|school|university|college|police|fire_station|marketplace|bank|post_office"];
+  nwr(around:1200,${lat.toFixed(6)},${lon.toFixed(6)})["office"="government"];
+  nwr(around:1200,${lat.toFixed(6)},${lon.toFixed(6)})["tourism"~"museum|viewpoint|attraction"];
+);
+out center tags 80;`;
+  const response = await fetch("https://overpass.kumi.systems/api/interpreter", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    body: new URLSearchParams({ data: query }),
+    signal,
+  });
+  if (!response.ok) throw new Error("Live OpenStreetMap places are unavailable.");
+  const data = await response.json() as { elements?: OverpassElement[] };
+  return normalizeOverpassFeatures(data.elements ?? []);
+}
+
+export default function OpenStreetMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers }: OpenStreetMapProps) {
+  const shellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
+  const baseLayerRef = useRef<TileLayer | null>(null);
   const overlaysRef = useRef<LayerGroup | null>(null);
+  const drawingRef = useRef<LayerGroup | null>(null);
+  const searchMarkerRef = useRef<LayerGroup | null>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
+  const notifyRef = useRef(onNotify);
   const [ready, setReady] = useState(false);
+  const [basemap, setBasemap] = useState<BasemapKey>("street");
+  const [activeTool, setActiveTool] = useState<MapTool>("select");
+  const [measurement, setMeasurement] = useState("");
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [osmFeatures, setOsmFeatures] = useState<OsmFeature[]>([]);
+  const [placesLoading, setPlacesLoading] = useState(false);
+  const [placesReload, setPlacesReload] = useState(0);
   const shownParcels = useMemo(() => parcels.slice(0, compact ? 12 : 42), [compact]);
+
+  useEffect(() => { notifyRef.current = onNotify; }, [onNotify]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let disposed = false;
-
     void import("leaflet").then((L) => {
       if (disposed || !containerRef.current) return;
       const map = L.map(containerRef.current, {
@@ -84,24 +203,20 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, vis
         doubleClickZoom: !compact,
         keyboard: !compact,
       });
-
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        minZoom: 5,
-        maxZoom: 19,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
-      }).addTo(map);
-
       map.attributionControl.setPrefix(false);
       leafletRef.current = L;
       mapRef.current = map;
+      drawingRef.current = L.layerGroup().addTo(map);
+      searchMarkerRef.current = L.layerGroup().addTo(map);
       setReady(true);
       window.setTimeout(() => map.invalidateSize(), 0);
     });
-
     return () => {
       disposed = true;
       overlaysRef.current?.remove();
-      overlaysRef.current = null;
+      drawingRef.current?.remove();
+      searchMarkerRef.current?.remove();
+      baseLayerRef.current?.remove();
       mapRef.current?.remove();
       mapRef.current = null;
       leafletRef.current = null;
@@ -112,70 +227,44 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, vis
     const L = leafletRef.current;
     const map = mapRef.current;
     if (!ready || !L || !map) return;
+    baseLayerRef.current?.remove();
+    const config = BASEMAPS[basemap];
+    const layer = L.tileLayer(config.url, { maxNativeZoom: config.maxNativeZoom, maxZoom: 19, minZoom: 5, attribution: config.attribution });
+    layer.addTo(map).bringToBack();
+    baseLayerRef.current = layer;
+  }, [basemap, ready]);
 
+  useEffect(() => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!ready || !L || !map) return;
     overlaysRef.current?.remove();
     const overlays = L.layerGroup().addTo(map);
     overlaysRef.current = overlays;
 
     if (visibleLayers?.boundaries ?? true) {
-      L.rectangle([[-2.052, 29.965], [-1.86, 30.205]], {
-        color: "#087fae",
-        weight: 2,
-        dashArray: "7 7",
-        fill: false,
-        interactive: false,
-      }).bindTooltip("Kigali prototype coverage", { direction: "center" }).addTo(overlays);
+      L.rectangle([[-2.052, 29.965], [-1.86, 30.205]], { color: "#087fae", weight: 2, dashArray: "7 7", fill: false, interactive: false }).bindTooltip("Kigali prototype coverage", { direction: "center" }).addTo(overlays);
     }
-
-    if (visibleLayers?.roads ?? true) {
-      const roadStyle = { color: "#ffd400", weight: compact ? 3 : 5, opacity: 0.9, interactive: false } as const;
-      L.polyline([[-1.996, 30.021], [-1.968, 30.052], [-1.947, 30.086], [-1.918, 30.132]], roadStyle).addTo(overlays);
-      L.polyline([[-1.985, 30.126], [-1.958, 30.092], [-1.934, 30.061], [-1.908, 30.038]], roadStyle).addTo(overlays);
-    }
-
-    if (visibleLayers?.wetlands ?? true) {
-      L.polygon([[-1.975, 30.132], [-1.965, 30.151], [-1.948, 30.145], [-1.952, 30.123]], {
-        color: "#168db9",
-        fillColor: "#a7dcef",
-        fillOpacity: 0.38,
-        weight: 2,
-        interactive: false,
-      }).addTo(overlays);
-    }
-
     if (visibleLayers?.zoning) {
       L.circle([-1.944, 30.095], { radius: 2_100, color: "#7659a8", fillColor: "#b8a8d4", fillOpacity: 0.12, weight: 2, interactive: false }).addTo(overlays);
     }
-
-    if (visibleLayers?.buildings) {
-      for (let index = 0; index < 18; index += 1) {
-        const lat = -1.968 + (index % 6) * 0.0045;
-        const lng = 30.071 + Math.floor(index / 6) * 0.006;
-        L.rectangle([[lat, lng], [lat + 0.0016, lng + 0.0023]], { color: "#57575b", weight: 1, fillOpacity: 0.28, interactive: false }).addTo(overlays);
-      }
-    }
-
     if (visibleLayers?.parcels ?? true) {
       shownParcels.forEach((parcel, index) => {
         const isSelected = selected?.upi === parcel.upi;
-        const polygon = L.polygon(parcelShape(parcel, index), {
-          color: isSelected ? "#ffd400" : LAND_USE_COLORS[parcel.landUse],
-          fillColor: LAND_USE_COLORS[parcel.landUse],
-          fillOpacity: isSelected ? 0.72 : 0.42,
-          weight: isSelected ? 4 : 2,
-        });
-        polygon.bindTooltip(`${parcel.upi} · ${parcel.landUse}`, { sticky: true, direction: "top" });
+        const polygon = L.polygon(parcelShape(parcel, index), { color: isSelected ? "#ffd400" : LAND_USE_COLORS[parcel.landUse], fillColor: LAND_USE_COLORS[parcel.landUse], fillOpacity: isSelected ? 0.72 : 0.42, weight: isSelected ? 4 : 2 });
+        polygon.bindTooltip(popupContent(parcel.upi, `${parcel.district} · ${parcel.landUse}`), { sticky: true, direction: "top" });
         polygon.on("click", () => onSelect?.(parcel));
         polygon.addTo(overlays);
       });
     }
-  }, [compact, onSelect, ready, selected, shownParcels, visibleLayers]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!ready || !map || compact) return;
-    map.setView(KIGALI_CENTER, 12, { animate: true });
-  }, [compact, ready, resetViewSignal]);
+    if (visibleLayers?.osmPlaces) {
+      osmFeatures.forEach((feature) => {
+        const marker = L.circleMarker([feature.lat, feature.lon], { radius: 6, color: "#ffffff", weight: 2, fillColor: "#087fae", fillOpacity: 0.95 });
+        marker.bindPopup(popupContent(feature.name, `OpenStreetMap · ${feature.category.replaceAll("_", " ")}`));
+        marker.addTo(overlays);
+      });
+    }
+  }, [onSelect, osmFeatures, ready, selected, shownParcels, visibleLayers]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -184,11 +273,171 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, vis
     if (index >= 0) map.flyTo(parcelCenter(selected, index), compact ? 14 : Math.max(map.getZoom(), 14), { duration: compact ? 0 : 0.55 });
   }, [compact, ready, selected]);
 
-  return (
-    <div className={`osm-map-shell ${compact ? "compact" : ""}`} aria-label="Interactive OpenStreetMap">
-      <div ref={containerRef} className="osm-map-canvas" />
-      {!ready && <div className="osm-map-loading"><span />Loading OpenStreetMap…</div>}
-      {!compact && <div className="osm-map-status"><i /> OpenStreetMap · synthetic parcel overlays</div>}
-    </div>
-  );
+  useEffect(() => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    const group = drawingRef.current;
+    if (!ready || !L || !map || !group || compact || activeTool === "select") return;
+    group.clearLayers();
+    setMeasurement(activeTool === "distance" ? "Tap two or more points to measure distance." : "Tap three or more points to measure area.");
+    const points: { lat: number; lng: number }[] = [];
+    map.doubleClickZoom.disable();
+
+    const handleClick = (event: { latlng: { lat: number; lng: number } }) => {
+      points.push(event.latlng);
+      group.clearLayers();
+      points.forEach((point) => L.circleMarker([point.lat, point.lng], { radius: 4, color: "#ffffff", weight: 2, fillColor: "#087fae", fillOpacity: 1 }).addTo(group));
+      if (activeTool === "distance") {
+        L.polyline(points.map((point) => [point.lat, point.lng]), { color: "#087fae", weight: 4, dashArray: "7 5" }).addTo(group);
+        let metres = 0;
+        for (let index = 1; index < points.length; index += 1) metres += map.distance(points[index - 1], points[index]);
+        if (points.length > 1) setMeasurement(metres >= 1000 ? `${(metres / 1000).toFixed(2)} km` : `${Math.round(metres)} m`);
+      } else {
+        L.polygon(points.map((point) => [point.lat, point.lng]), { color: "#21633f", fillColor: "#ffd400", fillOpacity: 0.25, weight: 3 }).addTo(group);
+        const area = polygonArea(points);
+        if (points.length > 2) setMeasurement(area >= 10_000 ? `${(area / 10_000).toFixed(2)} ha` : `${Math.round(area).toLocaleString()} m²`);
+      }
+    };
+    map.on("click", handleClick);
+    return () => { map.off("click", handleClick); map.doubleClickZoom.enable(); };
+  }, [activeTool, compact, ready]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || compact || !visibleLayers?.osmPlaces) return;
+    const controller = new AbortController();
+    const center = map.getCenter();
+    setPlacesLoading(true);
+    const requestFeatures = async () => {
+      if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") return loadOverpassFeaturesDirect(center.lat, center.lng, controller.signal);
+      const response = await fetch(`/api/osm/features?lat=${center.lat.toFixed(6)}&lon=${center.lng.toFixed(6)}&radius=1200`, { signal: controller.signal });
+      const data = await response.json() as { features?: OsmFeature[]; error?: string };
+      if (!response.ok) return loadOverpassFeaturesDirect(center.lat, center.lng, controller.signal);
+      return data.features ?? [];
+    };
+    void requestFeatures()
+      .then((features) => {
+        setOsmFeatures(features);
+        notifyRef.current?.(`${features.length} live OpenStreetMap places loaded`);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setOsmFeatures([]);
+        notifyRef.current?.("Live OpenStreetMap places could not be loaded");
+      })
+      .finally(() => setPlacesLoading(false));
+    return () => controller.abort();
+  }, [compact, placesReload, ready, visibleLayers?.osmPlaces]);
+
+  async function searchMap(event: FormEvent) {
+    event.preventDefault();
+    const term = query.trim();
+    if (term.length < 2) { setSearchError("Enter at least two characters."); return; }
+    const localMatch = parcels.find((parcel) => `${parcel.upi} ${parcel.district} ${parcel.sector} ${parcel.cell}`.toLowerCase().includes(term.toLowerCase()));
+    if (localMatch) {
+      onSelect?.(localMatch);
+      setSearchResults([]);
+      setSearchError("");
+      notifyRef.current?.(`Prototype parcel ${localMatch.upi} selected`);
+      return;
+    }
+    setSearching(true);
+    setSearchError("");
+    setSearchResults([]);
+    try {
+      let results: SearchResult[];
+      if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+        results = await searchPhotonDirect(term);
+      } else {
+        const response = await fetch(`/api/osm/search?q=${encodeURIComponent(term)}`);
+        const data = await response.json() as { results?: SearchResult[]; error?: string };
+        results = response.ok ? data.results ?? [] : await searchPhotonDirect(term);
+      }
+      setSearchResults(results);
+      if (!results.length) setSearchError("No matching OpenStreetMap place found in Rwanda.");
+    } catch (error) {
+      setSearchError(error instanceof Error ? error.message : "Open map search is unavailable.");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function openSearchResult(result: SearchResult) {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    searchMarkerRef.current?.clearLayers();
+    const marker = L.circleMarker([result.lat, result.lon], { radius: 9, color: "#ffffff", weight: 3, fillColor: "#ffd400", fillOpacity: 1 });
+    marker.bindPopup(popupContent(result.name, result.description)).addTo(searchMarkerRef.current!).openPopup();
+    map.flyTo([result.lat, result.lon], 16, { duration: 0.7 });
+    setSearchResults([]);
+    setQuery(result.name);
+    notifyRef.current?.(`${result.name} opened from OpenStreetMap`);
+  }
+
+  function locateUser() {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    map.once("locationfound", (event) => {
+      searchMarkerRef.current?.clearLayers();
+      L.circle(event.latlng, { radius: event.accuracy, color: "#087fae", fillColor: "#a7dcef", fillOpacity: 0.18, weight: 2 }).addTo(searchMarkerRef.current!);
+      L.circleMarker(event.latlng, { radius: 7, color: "#ffffff", weight: 3, fillColor: "#087fae", fillOpacity: 1 }).bindPopup("Your approximate location").addTo(searchMarkerRef.current!).openPopup();
+      notifyRef.current?.("Map centred on your location");
+    });
+    map.once("locationerror", () => notifyRef.current?.("Location permission was unavailable"));
+    map.locate({ setView: true, maxZoom: 16, enableHighAccuracy: true, timeout: 10_000 });
+  }
+
+  function clearMapWork() {
+    drawingRef.current?.clearLayers();
+    searchMarkerRef.current?.clearLayers();
+    setMeasurement("");
+    setActiveTool("select");
+    onClearSelection?.();
+  }
+
+  function exportSelectedParcel() {
+    if (!selected) { notifyRef.current?.("Select a prototype parcel before exporting"); return; }
+    const index = parcels.findIndex((parcel) => parcel.upi === selected.upi);
+    const coordinates = parcelShape(selected, Math.max(0, index)).map(([lat, lon]) => [lon, lat]);
+    coordinates.push(coordinates[0]);
+    const feature = { type: "Feature", properties: { upi: selected.upi, district: selected.district, sector: selected.sector, landUse: selected.landUse, zoning: selected.zoning, source: "NLA GeoAI synthetic demonstration parcel" }, geometry: { type: "Polygon", coordinates: [coordinates] } };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(feature, null, 2)], { type: "application/geo+json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${selected.upi.replaceAll("/", "-")}.geojson`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    notifyRef.current?.("Selected parcel exported as GeoJSON");
+  }
+
+  async function toggleFullscreen() {
+    if (!shellRef.current) return;
+    if (document.fullscreenElement) await document.exitFullscreen(); else await shellRef.current.requestFullscreen();
+    window.setTimeout(() => mapRef.current?.invalidateSize(), 120);
+  }
+
+  return <div ref={shellRef} className={`osm-map-shell ${compact ? "compact" : ""}`} aria-label="Interactive open-source map">
+    <div ref={containerRef} className="osm-map-canvas" />
+    {!ready && <div className="osm-map-loading"><span />Loading open map…</div>}
+    {!compact && <>
+      <form className="osm-search" onSubmit={searchMap}><span>⌕</span><input aria-label="Search parcels and OpenStreetMap places" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search parcel UPI or any place in Rwanda…" /><button disabled={searching}>{searching ? "…" : "Search"}</button></form>
+      {(searchResults.length > 0 || searchError) && <div className="osm-search-results">{searchError && <p>{searchError}</p>}{searchResults.map((result) => <button key={result.id} onClick={() => openSearchResult(result)}><span>OSM</span><b>{result.name}<small>{result.description}</small></b><i>›</i></button>)}</div>}
+      <div className="osm-basemap-switcher" aria-label="Basemap selection">{(Object.keys(BASEMAPS) as BasemapKey[]).map((key) => <button key={key} className={basemap === key ? "active" : ""} onClick={() => setBasemap(key)} title={BASEMAPS[key].detail}>{key === "street" ? "Street" : key === "topographic" ? "Topo" : "NASA Earth"}</button>)}</div>
+      <div className="osm-map-tools" aria-label="Open mapping tools">
+        <button className={activeTool === "select" ? "active" : ""} onClick={() => { setActiveTool("select"); setMeasurement(""); }} title="Select parcels">SE</button>
+        <button className={activeTool === "distance" ? "active" : ""} onClick={() => setActiveTool("distance")} title="Measure distance">DI</button>
+        <button className={activeTool === "area" ? "active" : ""} onClick={() => setActiveTool("area")} title="Measure area">AR</button>
+        <button onClick={locateUser} title="Find my location">GPS</button>
+        <button onClick={() => mapRef.current?.fitBounds(RWANDA_BOUNDS)} title="Fit Rwanda">RW</button>
+        <button onClick={clearMapWork} title="Clear map work">CL</button>
+        <button onClick={exportSelectedParcel} disabled={!selected} title="Export selected parcel as GeoJSON">EX</button>
+        <button onClick={() => void toggleFullscreen()} title="Toggle fullscreen">FS</button>
+      </div>
+      {visibleLayers?.osmPlaces && <button className="osm-refresh-places" onClick={() => setPlacesReload((value) => value + 1)} disabled={placesLoading}>{placesLoading ? "Loading open places…" : `Refresh OSM places · ${osmFeatures.length}`}</button>}
+      {measurement && <div className="osm-measurement"><span>{activeTool === "distance" ? "Distance" : "Area"}</span><b>{measurement}</b><button onClick={() => { setActiveTool("select"); setMeasurement(""); }}>Done</button></div>}
+      <div className="osm-map-status"><i />{BASEMAPS[basemap].label} · open data{visibleLayers?.parcels ? " + synthetic parcels" : ""}</div>
+    </>}
+  </div>;
 }
