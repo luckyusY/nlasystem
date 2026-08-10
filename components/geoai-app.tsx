@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { BarChart3, Bell, Bot, BookOpen, Boxes, CircleDotDashed, Combine, Database, Download, FileDown, FileText, HeartPulse, Home, LandPlot, LoaderCircle, Map as MapIcon, Menu, MoreHorizontal, Play, Radar, RadioTower, Route, Satellite, ScanLine, ScrollText, Search, Settings, ShieldCheck, Sparkles, Tags, Waves, Workflow, type LucideIcon } from "lucide-react";
@@ -8,6 +8,8 @@ import { A11y, Keyboard, Pagination } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import OpenStreetMap, { type MapLayerVisibility } from "@/components/open-street-map";
 import { auditEvents, corsStations, datasets, documents, parcels, reports, roles, type Parcel } from "@/lib/data";
+import { analyzeParcels, type SpatialMetric } from "@/lib/geospatial-engine";
+import { inferLocalGeoIntent, warmLocalGeoAI, type LocalGeoAIResult } from "@/lib/local-geoai";
 
 type PageKey = "dashboard" | "assistant" | "map" | "parcels" | "analysis" | "catalogue" | "knowledge" | "reports" | "cors" | "satellite" | "audit" | "admin" | "health";
 type Message = { id: number; role: "assistant" | "user"; text: string; sources?: string[]; stats?: { label: string; value: string }[]; warning?: string };
@@ -55,7 +57,7 @@ const titles: Record<PageKey, { eyebrow: string; title: string; subtitle: string
   assistant: { eyebrow: "Decision support", title: "NLA GeoAI Assistant", subtitle: "Ask questions across parcels, GIS layers, NSDI metadata and verified demo documents." },
   map: { eyebrow: "Geospatial workspace", title: "Interactive Map", subtitle: "Explore synthetic parcel geometry and prototype national reference layers." },
   parcels: { eyebrow: "Land intelligence", title: "Parcel Registry", subtitle: "Search and inspect non-sensitive synthetic cadastral records." },
-  analysis: { eyebrow: "Approved spatial tools", title: "GIS Analysis", subtitle: "Run controlled proximity, intersection and impact workflows." },
+  analysis: { eyebrow: "Open spatial tools", title: "GIS Analysis", subtitle: "Run real Turf.js proximity, intersection, buffer and area workflows." },
   catalogue: { eyebrow: "National Spatial Data Infrastructure", title: "NSDI Data Catalogue", subtitle: "Discover available geospatial datasets and their access conditions." },
   knowledge: { eyebrow: "Verified institutional knowledge", title: "Knowledge Centre", subtitle: "Search indexed demonstration procedures, manuals and technical guidance." },
   reports: { eyebrow: "Evidence and documentation", title: "Reports", subtitle: "Generate traceable decision-support reports with sources and disclaimers." },
@@ -78,10 +80,28 @@ const suggestions = [
 function getAssistantResponse(question: string): Message {
   const q = question.toLowerCase();
   const base = { id: Date.now() + 1, role: "assistant" as const };
-  if (q.includes("agric") && q.includes("gasabo")) return { ...base, text: "I found 21 synthetic agricultural parcels in Gasabo District. The matching features are ready to inspect on the map. This result uses approved district and land-use filters rather than unrestricted database queries.", stats: [{ label: "Matching parcels", value: "21" }, { label: "Combined area", value: "18.7 ha" }, { label: "Data confidence", value: "Demo" }], sources: ["GIS — Synthetic Parcel Layer", "GIS — District Boundaries", "GIS — Land-use Classification"], warning: "Prototype result. Parcel boundaries and classifications require officer verification." };
-  if (q.includes("100") && q.includes("road")) return { ...base, text: "The approved within-distance analysis identified 37 parcels within 100 metres of the selected road network. Twenty-one are classified as agricultural in the synthetic dataset.", stats: [{ label: "Affected parcels", value: "37" }, { label: "Agricultural", value: "21" }, { label: "Area affected", value: "18.7 ha" }], sources: ["PostGIS — ST_DWithin", "NSDI — National Road Network", "GIS — Synthetic Parcel Layer"], warning: "Road alignments and parcel geometry are synthetic demonstration data." };
-  if (q.includes("wetland")) return { ...base, text: "Nine synthetic parcels intersect the demonstration wetland layer. Three have a high overlap ratio and should be reviewed first by an authorized GIS or Land Use officer.", stats: [{ label: "Intersections", value: "9" }, { label: "High impact", value: "3" }, { label: "Total overlap", value: "4.2 ha" }], sources: ["PostGIS — ST_Intersects", "REMA — National Wetlands (catalogue record)", "GIS — Synthetic Parcel Layer"], warning: "This screening does not establish a legal wetland boundary." };
-  if (q.includes("0012") || q.includes("analyse parcel")) return { ...base, text: "Parcel 1/02/03/04/0012 is a 3,250 m² registered residential parcel in Remera Sector, Gasabo. It is zoned R2, approximately 84 m from the nearest mapped road and does not intersect the prototype wetland layer. No major spatial conflict was detected in the currently connected demo sources.", stats: [{ label: "Area", value: "3,250 m²" }, { label: "Road distance", value: "84 m" }, { label: "Wetland overlap", value: "None" }], sources: ["LAIS Mock Connector — Parcel Record", "GIS — Road Network", "GIS — Wetland Layer", "Knowledge — Land Use Planning Reference (DEMO)"], warning: "AI-generated decision support. Final administrative or legal decisions require an authorized NLA officer." };
+  if (q.includes("agric") && q.includes("gasabo")) {
+    const matches = parcels.filter((parcel) => parcel.district === "Gasabo" && parcel.landUse === "Agriculture");
+    const areaHa = matches.reduce((sum, parcel) => sum + parcel.area, 0) / 10_000;
+    return { ...base, text: `I found ${matches.length} synthetic agricultural parcels in Gasabo District. This result is calculated from the current demonstration registry using district and land-use attributes.`, stats: [{ label: "Matching parcels", value: String(matches.length) }, { label: "Recorded area", value: `${areaHa.toFixed(2)} ha` }, { label: "Data confidence", value: "Demo" }], sources: ["GIS — Synthetic Parcel Registry", "Attribute filter — District + Land use"], warning: "Prototype result. Parcel boundaries and classifications require officer verification." };
+  }
+  if (q.includes("road") || q.includes("buffer") || q.includes("proximity")) {
+    const result = analyzeParcels({ source: "road", threshold: 100, road: "KN 5 Road", district: "All districts", landUse: "All categories", zoning: "All zones" });
+    const agricultural = result.matches.filter((parcel) => parcel.landUse === "Agriculture").length;
+    const areaHa = result.matches.reduce((sum, parcel) => sum + result.metrics[parcel.upi].areaM2, 0) / 10_000;
+    return { ...base, text: `The Turf.js road-buffer workflow identified ${result.matches.length} synthetic parcel geometries within 100 metres of KN 5 Road. ${agricultural} are classified as agricultural.`, stats: [{ label: "Affected parcels", value: String(result.matches.length) }, { label: "Agricultural", value: String(agricultural) }, { label: "Geodesic area", value: `${areaHa.toFixed(2)} ha` }], sources: ["Turf.js — buffer + booleanIntersects", "GeoJSON — KN 5 Road reference", "GIS — Synthetic Parcel Geometry"], warning: "Road alignments and parcel geometry are synthetic demonstration data." };
+  }
+  if (q.includes("wetland")) {
+    const result = analyzeParcels({ source: "wetland", threshold: 0, road: "KN 5 Road", district: "All districts", landUse: "All categories", zoning: "All zones" });
+    const areaHa = result.matches.reduce((sum, parcel) => sum + result.metrics[parcel.upi].areaM2, 0) / 10_000;
+    return { ...base, text: `${result.matches.length} synthetic parcel geometries intersect the demonstration wetland references. The browser calculated this from the shared map geometry rather than a stored overlap label.`, stats: [{ label: "Intersections", value: String(result.matches.length) }, { label: "Geodesic area", value: `${areaHa.toFixed(2)} ha` }, { label: "Engine", value: "Turf.js" }], sources: ["Turf.js — booleanIntersects", "GeoJSON — Demo Wetland References", "GIS — Synthetic Parcel Geometry"], warning: "This screening does not establish a legal wetland boundary." };
+  }
+  if (q.includes("0012") || q.includes("analyse parcel")) {
+    const parcel = parcels.find((candidate) => candidate.upi === "1/02/03/04/0012") ?? parcels[0];
+    const result = analyzeParcels({ source: "attribute", threshold: 0, road: "KN 5 Road", district: "All districts", landUse: "All categories", zoning: "All zones" });
+    const metric = result.metrics[parcel.upi];
+    return { ...base, text: `Parcel ${parcel.upi} is a ${metric.areaM2.toLocaleString(undefined, { maximumFractionDigits: 0 })} m² synthetic ${parcel.landUse.toLowerCase()} parcel in ${parcel.sector} Sector, ${parcel.district}. Its centroid is approximately ${metric.roadDistanceM.toFixed(0)} m from KN 5 Road and ${metric.wetlandDistanceM.toFixed(0)} m from the closest demonstration wetland boundary.`, stats: [{ label: "Geodesic area", value: `${metric.areaM2.toFixed(0)} m²` }, { label: "Road distance", value: `${metric.roadDistanceM.toFixed(0)} m` }, { label: "UTM CRS", value: "EPSG:32736" }], sources: ["GeoJSON — Synthetic Parcel Geometry", "Turf.js — geodesic metrics", "Proj4js — UTM 36S centroid"], warning: "AI-generated decision support. Final administrative or legal decisions require an authorized NLA officer." };
+  }
   if (q.includes("nsdi") || q.includes("dataset") || q.includes("roads")) return { ...base, text: "Yes. The NSDI demonstration catalogue contains a National Road Network dataset maintained by RTDA. It has national coverage, a 1:10,000 reference scale, EPSG:32736 coordinates and internal access classification.", stats: [{ label: "Catalogue matches", value: "2" }, { label: "Latest update", value: "02 Aug 2026" }, { label: "Access", value: "Internal" }], sources: ["NSDI Catalogue — National Road Network", "NSDI Catalogue — Administrative Boundaries"] };
   if (q.includes("subdivision") || q.includes("document")) return { ...base, text: "I found relevant sections in two indexed demonstration documents. They describe a prototype review sequence covering parcel identification, zoning checks, survey-plan validation and authorized officer approval. I cannot verify an official legal requirement from demo material alone.", stats: [{ label: "Documents", value: "2" }, { label: "Relevant sections", value: "7" }, { label: "Verification", value: "Required" }], sources: ["Subdivision Review Guide — DEMO, sections 2–4", "Land Administration Procedures — DEMO, section 8"], warning: "These are DEMO documents, not official regulations. Consult an authorized legal or land administration officer." };
   return { ...base, text: "I checked the currently connected prototype sources but could not verify a sufficiently specific answer. Try including a parcel UPI, district, layer, distance or document topic.", sources: ["Connected NLA prototype sources"], warning: "Information could not be verified from the currently connected NLA data sources." };
@@ -94,6 +114,7 @@ export default function GeoAIApp() {
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [analysisMatches, setAnalysisMatches] = useState<string[]>([]);
+  const [registryQuery, setRegistryQuery] = useState("");
 
   function navigate(key: PageKey) {
     setPage(key);
@@ -140,7 +161,7 @@ export default function GeoAIApp() {
         <header className="topbar">
           <button className="menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Menu size={21} aria-hidden /></button>
           <Image className="mobile-brand-logo" src="/nla-logo.png" alt="National Land Authority" width={1043} height={541} priority />
-          <div className="global-search"><span><Search size={15} aria-hidden /></span><input aria-label="Global search" placeholder="Search parcels, datasets, reports…" onKeyDown={(e) => { if (e.key === "Enter") { navigate("parcels"); notify("Search opened in Parcel Registry"); } }} /><kbd>⌘ K</kbd></div>
+          <div className="global-search"><span><Search size={15} aria-hidden /></span><input aria-label="Global search" placeholder="Search UPI, district, sector or land use…" onKeyDown={(event) => { if (event.key === "Enter") { const query = event.currentTarget.value.trim(); setRegistryQuery(query); navigate("parcels"); notify(query ? `Searching the Parcel Registry for “${query}”` : "Parcel Registry opened"); } }} /><kbd>↵</kbd></div>
           <div className="top-actions">
             <div className="environment"><span /> Prototype data</div>
             <button className="mobile-search-button" onClick={() => navigate("parcels")} aria-label="Search parcels and datasets"><Search size={20} aria-hidden /></button>
@@ -157,7 +178,7 @@ export default function GeoAIApp() {
               {page === "dashboard" && <Dashboard onNavigate={navigate} notify={notify} />}
               {page === "assistant" && <AssistantPage onOpenMap={() => navigate("map")} notify={notify} />}
               {page === "map" && <MapPage notify={notify} highlightedUpis={analysisMatches} />}
-              {page === "parcels" && <ParcelsPage onAnalyse={() => navigate("assistant")} notify={notify} />}
+              {page === "parcels" && <ParcelsPage initialQuery={registryQuery} onAnalyse={() => navigate("assistant")} notify={notify} />}
               {page === "analysis" && <AnalysisPage onOpenMap={(matches) => { setAnalysisMatches(matches.map((parcel) => parcel.upi)); navigate("map"); }} notify={notify} />}
               {page === "catalogue" && <CataloguePage notify={notify} />}
               {page === "knowledge" && <KnowledgePage notify={notify} />}
@@ -224,7 +245,7 @@ function Dashboard({ onNavigate, notify }: { onNavigate: (p: PageKey) => void; n
   const reduceMotion = useReducedMotion();
   const metrics = [
     ["128", "Synthetic parcels", "+12 this month", "PC"], ["6", "Districts covered", "Prototype scope", "DS"], ["12", "Available GIS layers", "11 online", "LY"], ["42", "NSDI datasets", "+3 indexed", "NS"],
-    ["28", "Documents indexed", "1,483 chunks", "DC"], ["184", "AI queries today", "+18% vs. Friday", "AI"], ["31", "GIS analyses", "7 reports created", "GA"], ["Healthy", "System health", "7 of 8 services", "SH"],
+    ["28", "Documents indexed", "1,483 demo chunks", "DC"], ["Local", "AI runtime", "No provider key", "AI"], ["8", "GIS operations", "Turf geometry", "GA"], ["Live", "Open-stack health", "Runtime checks", "SH"],
   ];
   return <div className="dashboard-stack">
     <section className="metric-carousel" aria-label="Operational metrics"><Swiper className="metric-swiper" modules={[A11y, Keyboard, Pagination]} slidesPerView={1.18} spaceBetween={12} keyboard={{ enabled: true }} pagination={{ clickable: true }} breakpoints={{ 520: { slidesPerView: 2.15 }, 900: { slidesPerView: 3.15 }, 1260: { slidesPerView: 4 } }}>{metrics.map(([value, label, detail, mark]) => <SwiperSlide key={label}><motion.article className="metric-card" whileHover={reduceMotion ? undefined : { y: -6, rotateX: 2, rotateY: -1 }} transition={{ type: "spring", stiffness: 260, damping: 22 }}><div className="metric-top"><span className="metric-mark">{mark}</span><i>↗</i></div><strong>{value}</strong><h3>{label}</h3><p>{detail}</p></motion.article></SwiperSlide>)}</Swiper></section>
@@ -248,26 +269,46 @@ function AssistantPage({ onOpenMap, notify }: { onOpenMap: () => void; notify: (
   const [messages, setMessages] = useState<Message[]>([{ id: 1, role: "assistant", text: "Good evening, Aline. I can help you explore synthetic parcels, run approved GIS operations, search the NSDI catalogue and find verified sections in indexed demo documents. What would you like to investigate?", sources: ["NLA GeoAI prototype services"] }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [localAiState, setLocalAiState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [localAiProgress, setLocalAiProgress] = useState(0);
+  const [localAiDetail, setLocalAiDetail] = useState("Runs privately in this browser");
+  const [localInsight, setLocalInsight] = useState<LocalGeoAIResult | null>(null);
+
+  async function enableLocalAI() {
+    if (localAiState === "loading" || localAiState === "ready") return;
+    setLocalAiState("loading");
+    setLocalAiProgress(0);
+    setLocalAiDetail("Preparing the quantized geospatial intent model");
+    try {
+      await warmLocalGeoAI((percent, detail) => {
+        setLocalAiProgress(percent);
+        setLocalAiDetail(detail);
+      });
+      setLocalAiState("ready");
+      setLocalAiProgress(100);
+      setLocalAiDetail("all-MiniLM-L6-v2 · WASM · browser cache");
+      notify("NLA Local GeoAI is ready in this browser");
+    } catch (error) {
+      setLocalAiState("error");
+      setLocalAiDetail(error instanceof Error ? `Model unavailable: ${error.message.slice(0, 96)}` : "Model download was unavailable; grounded tools still work");
+      notify("Local AI could not load; grounded NLA tools remain available");
+    }
+  }
+
   const submit = (text: string) => {
     const clean = text.trim(); if (!clean || loading) return;
     setMessages((old) => [...old, { id: Date.now(), role: "user", text: clean }]); setInput(""); setLoading(true);
     window.setTimeout(async () => {
       const grounded = getAssistantResponse(clean);
-      try {
-        const response = await fetch("/api/assistant/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: clean, role: "GIS Officer" }),
-          signal: AbortSignal.timeout(2500),
-        });
-        if (response.ok) {
-          const apiResult = await response.json() as { answer?: string; sources?: string[]; warning?: string };
-          grounded.text = apiResult.answer || grounded.text;
-          grounded.sources = apiResult.sources?.length ? apiResult.sources : grounded.sources;
-          grounded.warning = apiResult.warning || grounded.warning;
+      if (localAiState === "ready") {
+        try {
+          const insight = await inferLocalGeoIntent(clean);
+          setLocalInsight(insight);
+          grounded.sources = [...(grounded.sources ?? []), `NLA Local GeoAI · ${insight.label} · ${Math.round(insight.confidence * 100)}%`];
+        } catch {
+          setLocalAiState("error");
+          setLocalAiDetail("Local inference failed; deterministic geospatial routing remains active");
         }
-      } catch {
-        // Local UI workflows stay usable when the optional Python service is offline.
       }
       setMessages((old) => [...old, grounded]);
       setLoading(false);
@@ -275,7 +316,7 @@ function AssistantPage({ onOpenMap, notify }: { onOpenMap: () => void; notify: (
   };
   return <div className="assistant-layout">
     <aside className="conversation-panel"><button className="new-chat" onClick={() => setMessages(messages.slice(0, 1))}>＋ New investigation</button><p>Today</p><button className="conversation active"><span>Road buffer · Gasabo</span><small>37 affected parcels</small></button><button className="conversation"><span>Subdivision guidance</span><small>2 verified demo sources</small></button><p>Previous</p><button className="conversation"><span>Wetland intersection</span><small>9 parcels identified</small></button><button className="conversation"><span>NSDI roads data</span><small>Catalogue discovery</small></button><div className="data-scope"><span>✓</span><p><b>Safe data scope</b><small>Synthetic parcels · demo documents · catalogue metadata</small></p></div></aside>
-    <section className="chat-panel"><div className="chat-status"><div><span className="ai-orb">✦</span><p><b>NLA GeoAI</b><small><i /> Mock AI mode · approved tools only</small></p></div><button onClick={() => notify("Conversation exported to audit-safe text")}>Export</button></div>
+    <section className="chat-panel"><div className="chat-status"><div><span className="ai-orb">✦</span><p><b>NLA GeoAI</b><small><i /> {localAiState === "ready" ? "Local AI + grounded GIS tools" : "Grounded GIS tools · local AI optional"}</small></p></div><button onClick={() => notify("Conversation exported to audit-safe text")}>Export</button></div>
       <div className="messages">
         {messages.map((message) => <div className={`message ${message.role}`} key={message.id}>{message.role === "assistant" && <span className="message-avatar">✦</span>}<div className="message-body"><small>{message.role === "assistant" ? "GEOAI ASSISTANT" : "YOU"}</small><p>{message.text}</p>{message.stats && <div className="answer-stats">{message.stats.map((stat) => <div key={stat.label}><b>{stat.value}</b><span>{stat.label}</span></div>)}</div>}{message.sources && <div className="sources"><b>Sources used</b>{message.sources.map((source) => <span key={source}>↗ {source}</span>)}</div>}{message.warning && <div className="answer-warning"><b>Human verification required</b><span>{message.warning}</span></div>}{message.stats && <div className="message-actions"><button onClick={onOpenMap}>View on map</button><button onClick={() => notify("Assessment added to a report draft")}>Add to report</button></div>}</div></div>)}
         {loading && <div className="message assistant"><span className="message-avatar">✦</span><div className="typing"><i /><i /><i /></div></div>}
@@ -283,7 +324,7 @@ function AssistantPage({ onOpenMap, notify }: { onOpenMap: () => void; notify: (
       {messages.length < 3 && <div className="suggestion-grid">{suggestions.map((s) => <button key={s} onClick={() => submit(s)}><span>↗</span>{s}</button>)}</div>}
       <form className="prompt-box" onSubmit={(e: FormEvent) => { e.preventDefault(); submit(input); }}><textarea aria-label="Ask GeoAI" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about a parcel, GIS layer, dataset or verified document…" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(input); } }} /><div><span>GeoAI may make mistakes. Verify important decisions.</span><button disabled={!input.trim() || loading} aria-label="Send question">↑</button></div></form>
     </section>
-    <aside className="context-panel"><PanelHeader title="Active context" detail="Sources available to this chat" /><ContextItem mark="PC" title="Synthetic parcels" meta="128 records · 6 districts" status="Ready" /><ContextItem mark="MP" title="GIS layers" meta="11 of 12 available" status="Ready" /><ContextItem mark="NS" title="NSDI catalogue" meta="42 metadata records" status="Ready" /><ContextItem mark="KC" title="Knowledge index" meta="28 demo documents" status="Ready" /><ContextItem mark="LA" title="LAIS connector" meta="Mock endpoint only" status="Demo" /><div className="guardrail-card"><span>◆</span><h3>Built-in guardrails</h3><p>GeoAI can search, analyse and explain. It cannot register, transfer or alter land rights.</p><button onClick={() => notify("Security policy reference opened")}>View safety policy</button></div></aside>
+    <aside className="context-panel"><PanelHeader title="Active context" detail="Sources available to this chat" /><ContextItem mark="PC" title="Synthetic parcels" meta="128 records · 6 districts" status="Ready" /><ContextItem mark="MP" title="Open GIS engine" meta="Turf · Proj4 · GeoJSON" status="Ready" /><ContextItem mark="OS" title="OpenStreetMap services" meta="Photon search · Overpass places" status="Live" /><ContextItem mark="KC" title="Knowledge index" meta="28 demonstration documents" status="Demo" /><div className={`local-ai-card ${localAiState}`}><div><span>AI</span><p><b>NLA Local GeoAI</b><small>{localAiDetail}</small></p></div>{localAiState === "loading" && <div className="local-ai-progress"><i style={{ width: `${Math.max(4, localAiProgress)}%` }} /></div>}{localInsight && <p className="local-ai-insight">Last route: <b>{localInsight.label}</b> · {Math.round(localInsight.confidence * 100)}%</p>}<button onClick={() => void enableLocalAI()} disabled={localAiState === "loading" || localAiState === "ready"}>{localAiState === "ready" ? "Local model ready" : localAiState === "loading" ? `Loading ${localAiProgress}%` : localAiState === "error" ? "Retry local AI" : "Enable no-key local AI"}</button><small>First use downloads a quantized open model. Prompts and inference stay in your browser.</small></div><div className="guardrail-card"><span>◆</span><h3>Built-in guardrails</h3><p>GeoAI can search, analyse and explain. It cannot register, transfer or alter land rights.</p><button onClick={() => notify("Security policy reference opened")}>View safety policy</button></div></aside>
   </div>;
 }
 
@@ -295,18 +336,18 @@ function ParcelMap({ compact = false, selected, onSelect, onClearSelection, onNo
 
 function MapPage({ notify, highlightedUpis }: { notify: (s: string) => void; highlightedUpis: string[] }) {
   const [selected, setSelected] = useState<Parcel | undefined>(() => parcels.find((parcel) => highlightedUpis.includes(parcel.upi)) ?? parcels[0]);
-  const [layers, setLayers] = useState<MapLayerVisibility>({ parcels: true, osmPlaces: false, zoning: false, boundaries: true });
+  const [layers, setLayers] = useState<MapLayerVisibility>({ parcels: true, osmPlaces: false, roads: true, wetlands: true, zoning: false, boundaries: true });
 
   return <div className="map-workspace"><div className="map-main"><ParcelMap selected={selected} onSelect={setSelected} onClearSelection={() => setSelected(undefined)} onNotify={notify} visibleLayers={layers} highlightedUpis={highlightedUpis} /></div>
-    <aside className="map-side"><div className="map-tabs"><button className="active">Layers</button><button>Open data</button></div>{highlightedUpis.length > 0 && <div className="analysis-map-note"><Workflow size={16} aria-hidden /><p><b>Analysis result</b><small>{highlightedUpis.length} matched parcels highlighted in orange</small></p></div>}<div className="open-map-note"><span>OS</span><p><b>Open mapping stack</b><small>OSM streets · OpenTopoMap · NASA Earth imagery</small></p></div><div className="layer-group"><h3>Open data <span>−</span></h3><LayerToggle label="Live OSM places" sub="Schools · health · government · markets" checked={layers.osmPlaces} onChange={() => setLayers({ ...layers, osmPlaces: !layers.osmPlaces })} /></div><div className="layer-group"><h3>NLA demo context <span>−</span></h3><LayerToggle label="Prototype coverage" sub="Kigali demonstration boundary" checked={layers.boundaries} onChange={() => setLayers({ ...layers, boundaries: !layers.boundaries })} /><LayerToggle label="Synthetic cadastral parcels" sub="128 non-sensitive demonstration records" checked={layers.parcels} onChange={() => setLayers({ ...layers, parcels: !layers.parcels })} /><LayerToggle label="Demo planning zone" sub="Illustrative classification only" checked={layers.zoning} onChange={() => setLayers({ ...layers, zoning: !layers.zoning })} /></div>
+    <aside className="map-side"><div className="map-tabs"><button className="active">Layers</button><button>Open data</button></div>{highlightedUpis.length > 0 && <div className="analysis-map-note"><Workflow size={16} aria-hidden /><p><b>Analysis result</b><small>{highlightedUpis.length} matched parcels highlighted in orange</small></p></div>}<div className="open-map-note"><span>OS</span><p><b>Open geospatial stack</b><small>Leaflet · MapLibre · Turf · Proj4 · OSM</small></p></div><div className="layer-group"><h3>Open data <span>−</span></h3><LayerToggle label="Live OSM places" sub="Schools · health · government · markets" checked={layers.osmPlaces} onChange={() => setLayers({ ...layers, osmPlaces: !layers.osmPlaces })} /><LayerToggle label="Analysis roads" sub="Shared Turf road-reference geometry" checked={layers.roads} onChange={() => setLayers({ ...layers, roads: !layers.roads })} /><LayerToggle label="Wetland references" sub="Shared Turf environmental geometry" checked={layers.wetlands} onChange={() => setLayers({ ...layers, wetlands: !layers.wetlands })} /></div><div className="layer-group"><h3>NLA demo context <span>−</span></h3><LayerToggle label="Prototype coverage" sub="Kigali demonstration boundary" checked={layers.boundaries} onChange={() => setLayers({ ...layers, boundaries: !layers.boundaries })} /><LayerToggle label="Synthetic cadastral parcels" sub="128 non-sensitive demonstration records" checked={layers.parcels} onChange={() => setLayers({ ...layers, parcels: !layers.parcels })} /><LayerToggle label="Demo planning zone" sub="Illustrative classification only" checked={layers.zoning} onChange={() => setLayers({ ...layers, zoning: !layers.zoning })} /></div>
       {selected && <div className="selected-card"><div className="selected-head"><span>Selected parcel</span><button onClick={() => setSelected(undefined)}>×</button></div><h3>{selected.upi}</h3><dl><div><dt>District</dt><dd>{selected.district}</dd></div><div><dt>Sector</dt><dd>{selected.sector}</dd></div><div><dt>Area</dt><dd>{selected.area.toLocaleString()} m²</dd></div><div><dt>Land use</dt><dd>{selected.landUse}</dd></div><div><dt>Zoning</dt><dd>{selected.zoning}</dd></div><div><dt>Status</dt><dd><i />{selected.status}</dd></div></dl><button className="primary-button full" onClick={() => notify(`Parcel ${selected.upi} added to the analysis workspace`)}>Analyse parcel</button></div>}
     </aside></div>;
 }
 
 function LayerToggle({ label, sub, checked, onChange }: { label: string; sub: string; checked: boolean; onChange: () => void }) { return <label className="layer-toggle"><input type="checkbox" checked={checked} onChange={onChange} /><span className="toggle-ui" /><p><b>{label}</b><small>{sub}</small></p><i>••</i></label>; }
 
-function ParcelsPage({ onAnalyse, notify }: { onAnalyse: () => void; notify: (s: string) => void }) {
-  const [query, setQuery] = useState(""); const [district, setDistrict] = useState("All districts"); const [selected, setSelected] = useState<Parcel | null>(null);
+function ParcelsPage({ initialQuery, onAnalyse, notify }: { initialQuery?: string; onAnalyse: () => void; notify: (s: string) => void }) {
+  const [query, setQuery] = useState(initialQuery ?? ""); const [district, setDistrict] = useState("All districts"); const [selected, setSelected] = useState<Parcel | null>(null);
   const filtered = parcels.filter((p) => (district === "All districts" || p.district === district) && (`${p.upi} ${p.district} ${p.sector} ${p.landUse}`.toLowerCase().includes(query.toLowerCase())));
   return <div className="registry-layout"><section className="panel registry-panel"><div className="filters-row"><div className="field-search"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search UPI, sector or land use…" /></div><select value={district} onChange={(e) => setDistrict(e.target.value)}>{["All districts", "Gasabo", "Kicukiro", "Nyarugenge", "Musanze", "Huye", "Bugesera"].map((d) => <option key={d}>{d}</option>)}</select><button onClick={() => { setQuery(""); setDistrict("All districts"); }}>Clear filters</button><em>{filtered.length} records</em></div><div className="table-scroll"><table><thead><tr><th>UPI</th><th>Location</th><th>Area</th><th>Land use</th><th>Zoning</th><th>Status</th><th /></tr></thead><tbody>{filtered.slice(0, 12).map((p) => <tr key={p.upi} onClick={() => setSelected(p)} className={selected?.upi === p.upi ? "row-selected" : ""}><td><b>{p.upi}</b></td><td>{p.district}<small>{p.sector} · {p.cell}</small></td><td>{p.area.toLocaleString()} m²</td><td><span className={`use-tag ${p.landUse.toLowerCase().replace(" ", "-")}`}>{p.landUse}</span></td><td>{p.zoning}</td><td><span className={`status-tag ${p.status === "Registered" ? "good" : "warning"}`}><i />{p.status}</span></td><td>›</td></tr>)}</tbody></table></div><div className="table-footer"><span>Showing 1–{Math.min(12, filtered.length)} of {filtered.length}</span><div><button disabled>←</button><button className="active">1</button><button>2</button><button>3</button><button>→</button></div></div></section>
     <aside className="parcel-inspector">{selected ? <><div className="inspector-map"><ParcelMap compact selected={selected} /></div><div className="inspector-content"><span className="eyebrow">Parcel intelligence</span><h2>{selected.upi}</h2><p>{selected.sector}, {selected.district}</p><dl><div><dt>Area</dt><dd>{selected.area.toLocaleString()} m²</dd></div><div><dt>Land use</dt><dd>{selected.landUse}</dd></div><div><dt>Zoning</dt><dd>{selected.zoning}</dd></div><div><dt>Nearest road</dt><dd>{selected.roadDistance} m</dd></div><div><dt>Wetland distance</dt><dd>{selected.wetlandDistance} m</dd></div><div><dt>Registration</dt><dd>{selected.status}</dd></div></dl><div className="assessment-note"><b>AI observation</b><p>No major spatial conflict was detected using currently available prototype layers.</p></div><button className="primary-button full" onClick={onAnalyse}>Analyse with GeoAI</button><button className="secondary-button full" onClick={() => notify("Parcel report draft created")}>Generate assessment report</button></div></> : <div className="empty-inspector"><span>PC</span><h3>Select a parcel</h3><p>Choose a row to view land information and spatial relationships.</p></div>}</aside></div>;
@@ -333,8 +374,11 @@ const ANALYSIS_OPERATIONS: AnalysisOperation[] = [
   { name: "Road Impact Analysis", icon: Route, functionName: "ST_DWithin", parameterLabel: "Road buffer", parameterUnit: "metres", defaultValue: 100, source: "road" },
 ];
 
-function downloadAnalysisCsv(matches: Parcel[], operation: string) {
-  const rows = [["UPI", "District", "Sector", "Area_m2", "Land_use", "Zoning", "Road_distance_m", "Wetland_distance_m"], ...matches.map((parcel) => [parcel.upi, parcel.district, parcel.sector, parcel.area, parcel.landUse, parcel.zoning, parcel.roadDistance, parcel.wetlandDistance])];
+function downloadAnalysisCsv(matches: Parcel[], operation: string, metrics: Record<string, SpatialMetric>) {
+  const rows = [["UPI", "District", "Sector", "Area_m2_Turf", "Land_use", "Zoning", "Road_distance_m_Turf", "Wetland_distance_m_Turf", "Centroid_EPSG32736_E", "Centroid_EPSG32736_N"], ...matches.map((parcel) => {
+    const metric = metrics[parcel.upi];
+    return [parcel.upi, parcel.district, parcel.sector, metric?.areaM2.toFixed(2) ?? parcel.area, parcel.landUse, parcel.zoning, metric?.roadDistanceM.toFixed(2) ?? "", metric?.wetlandDistanceM.toFixed(2) ?? "", metric?.centroidUtm36S[0].toFixed(2) ?? "", metric?.centroidUtm36S[1].toFixed(2) ?? ""];
+  })];
   const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const anchor = document.createElement("a");
@@ -354,12 +398,14 @@ function AnalysisPage({ onOpenMap, notify }: { onOpenMap: (matches: Parcel[]) =>
   const [district, setDistrict] = useState("All districts");
   const [zoning, setZoning] = useState("All zones");
   const [matches, setMatches] = useState<Parcel[]>([]);
+  const [metrics, setMetrics] = useState<Record<string, SpatialMetric>>({});
 
   function chooseOperation(next: AnalysisOperation) {
     setOperation(next);
     setParameter(next.defaultValue);
     setComplete(false);
     setMatches([]);
+    setMetrics({});
   }
 
   function run(event: FormEvent) {
@@ -367,35 +413,30 @@ function AnalysisPage({ onOpenMap, notify }: { onOpenMap: (matches: Parcel[]) =>
     setRunning(true);
     setComplete(false);
     const threshold = Math.max(0, Number(parameter) || 0);
-    const scoped = parcels.filter((parcel) => (district === "All districts" || parcel.district === district) && (landUse === "All categories" || parcel.landUse === landUse) && (zoning === "All zones" || parcel.zoning === zoning));
-    let calculated: Parcel[];
-    const roadOffset = road === "KN 5 Road" ? 0 : road === "KK 15 Road" ? 25 : 55;
-    if (operation.source === "road") calculated = scoped.filter((parcel) => parcel.roadDistance + roadOffset <= threshold);
-    else if (operation.source === "wetland") calculated = scoped.filter((parcel) => parcel.wetlandDistance <= threshold);
-    else if (operation.source === "intersection") calculated = scoped.filter((parcel) => parcel.roadDistance <= threshold && parcel.wetlandDistance <= threshold);
-    else if (operation.source === "area") calculated = scoped.filter((parcel) => parcel.area >= threshold);
-    else calculated = scoped.filter((parcel) => parcel.area >= threshold);
+    const result = analyzeParcels({ source: operation.source, threshold, road, district, landUse, zoning });
     window.setTimeout(() => {
-      setMatches(calculated);
+      setMatches(result.matches);
+      setMetrics(result.metrics);
       setRunning(false);
       setComplete(true);
-      notify(`${operation.name} completed with ${calculated.length} matching parcels`);
+      notify(`${operation.name} completed with ${result.matches.length} geometry matches`);
     }, 650);
   }
 
-  const distanceFor = (parcel: Parcel) => operation.source === "wetland" ? parcel.wetlandDistance : operation.source === "intersection" ? Math.max(parcel.roadDistance, parcel.wetlandDistance) : parcel.roadDistance;
-  const high = matches.filter((parcel) => operation.source === "area" || operation.source === "attribute" ? parcel.area >= 6000 : distanceFor(parcel) <= Math.max(1, parameter * .34)).length;
-  const medium = matches.filter((parcel) => operation.source === "area" || operation.source === "attribute" ? parcel.area >= 3000 && parcel.area < 6000 : distanceFor(parcel) > parameter * .34 && distanceFor(parcel) <= parameter * .67).length;
+  const distanceFor = (parcel: Parcel) => operation.source === "wetland" ? metrics[parcel.upi]?.wetlandDistanceM ?? parcel.wetlandDistance : operation.source === "intersection" ? Math.max(metrics[parcel.upi]?.roadDistanceM ?? parcel.roadDistance, metrics[parcel.upi]?.wetlandDistanceM ?? parcel.wetlandDistance) : metrics[parcel.upi]?.roadDistanceM ?? parcel.roadDistance;
+  const areaFor = (parcel: Parcel) => metrics[parcel.upi]?.areaM2 ?? parcel.area;
+  const high = matches.filter((parcel) => operation.source === "area" || operation.source === "attribute" ? areaFor(parcel) >= 6000 : distanceFor(parcel) <= Math.max(1, parameter * .34)).length;
+  const medium = matches.filter((parcel) => operation.source === "area" || operation.source === "attribute" ? areaFor(parcel) >= 3000 && areaFor(parcel) < 6000 : distanceFor(parcel) > parameter * .34 && distanceFor(parcel) <= parameter * .67).length;
   const low = Math.max(0, matches.length - high - medium);
-  const totalArea = matches.reduce((sum, parcel) => sum + parcel.area, 0);
+  const totalArea = matches.reduce((sum, parcel) => sum + areaFor(parcel), 0);
   const dominantSector = matches.length ? [...new Set(matches.map((parcel) => parcel.sector))].sort((a, b) => matches.filter((parcel) => parcel.sector === b).length - matches.filter((parcel) => parcel.sector === a).length)[0] : "none";
   const context = operation.source === "road" ? `${operation.parameterLabel.toLowerCase()} ${parameter} ${operation.parameterUnit} from ${road}` : operation.source === "wetland" ? `within ${parameter} metres of the synthetic wetland reference` : operation.source === "intersection" ? `within ${parameter} metres of both road and wetland references` : operation.source === "area" ? `with area of at least ${parameter.toLocaleString()} m²` : `matching the selected land and zoning attributes`;
   const OperationIcon = operation.icon;
 
-  return <div className="analysis-layout"><aside className="analysis-menu"><p>Analysis operations</p>{ANALYSIS_OPERATIONS.map((item) => { const Icon = item.icon; return <button key={item.name} className={operation.name === item.name ? "active" : ""} onClick={() => chooseOperation(item)}><span><Icon size={14} strokeWidth={1.9} aria-hidden /></span>{item.name}</button>; })}</aside><section className="analysis-content"><form className="panel analysis-form" onSubmit={run}><div className="operation-title"><span><OperationIcon size={19} aria-hidden /></span><div><p>Controlled GIS demo engine</p><h2>{operation.name}</h2></div><em>{operation.functionName}</em></div><div className="form-grid">{(operation.source === "road" || operation.source === "intersection") && <label>Select road<select value={road} onChange={(event) => setRoad(event.target.value)}><option>KN 5 Road</option><option>KK 15 Road</option><option>NR 4 Corridor</option></select></label>}<label>{operation.parameterLabel}<div className="input-suffix"><input aria-label={operation.parameterLabel} type="number" min="0" max={operation.source === "area" || operation.source === "attribute" ? 10000 : 2500} value={parameter} onChange={(event) => setParameter(Number(event.target.value))} /><span>{operation.parameterUnit}</span></div></label><label>Land use<select value={landUse} onChange={(event) => setLandUse(event.target.value as typeof landUse)}><option>All categories</option><option>Agriculture</option><option>Residential</option><option>Commercial</option><option>Mixed Use</option><option>Conservation</option></select></label><label>District<select value={district} onChange={(event) => setDistrict(event.target.value)}><option>All districts</option><option>Gasabo</option><option>Kicukiro</option><option>Nyarugenge</option><option>Musanze</option><option>Huye</option><option>Bugesera</option></select></label><label>Zoning<select value={zoning} onChange={(event) => setZoning(event.target.value)}><option>All zones</option><option>R1</option><option>R2</option><option>R3</option><option>C1</option><option>AG</option><option>OS</option></select></label></div><div className="safe-query"><span><ShieldCheck size={17} aria-hidden /></span><p><b>Controlled spatial operation</b><small>The demo runs deterministic parcel filters equivalent to the approved <code>{operation.functionName}</code> workflow. It does not generate or execute unrestricted SQL.</small></p></div><button className="primary-button run-button" type="submit" disabled={running}>{running ? <><LoaderCircle className="spin" size={16} aria-hidden />Running analysis…</> : <><Play size={16} fill="currentColor" aria-hidden />Run analysis</>}</button></form>
-      {!complete && !running && <div className="analysis-empty"><span><Boxes size={29} aria-hidden /></span><h2>Configure and run the workflow</h2><p>Results will be calculated from the 128 synthetic parcel records using your selected spatial and attribute filters.</p><small>No result is shown until the analysis runs.</small></div>}
-      {running && <div className="analysis-empty running"><span><LoaderCircle className="spin" size={29} aria-hidden /></span><h2>Processing spatial filters</h2><p>Applying {operation.functionName} logic to the selected demonstration dataset.</p></div>}
-      {complete && <div className="analysis-results fresh"><div className="results-head"><div><span>Completed · synthetic data</span><h2>{matches.length} {matches.length === 1 ? "parcel" : "parcels"} matched</h2><p>{operation.name}: {context} in {district === "All districts" ? "all demonstration districts" : district}.</p></div><div><button onClick={() => onOpenMap(matches)} disabled={!matches.length}><MapIcon size={14} aria-hidden />View map</button><button onClick={() => { downloadAnalysisCsv(matches, operation.name); notify("Analysis CSV downloaded"); }} disabled={!matches.length}><Download size={14} aria-hidden />Export CSV</button></div></div><div className="impact-grid"><div><span>Total matched area</span><b>{(totalArea / 10_000).toFixed(2)} ha</b><small>Across {matches.length} parcels</small></div><div className="high"><span>High priority</span><b>{high}</b><small>Closest or largest matches</small></div><div className="medium"><span>Medium priority</span><b>{medium}</b><small>Middle analysis band</small></div><div className="low"><span>Low priority</span><b>{low}</b><small>Remaining matches</small></div></div><div className="result-map-row"><div className="result-map"><ParcelMap compact selected={matches[0]} highlightedUpis={matches.map((parcel) => parcel.upi)} /><div className="result-upis">{matches.slice(0, 4).map((parcel) => <span key={parcel.upi}>{parcel.upi}</span>)}{matches.length > 4 && <em>+{matches.length - 4} more</em>}</div></div><div className="ai-summary"><span><Sparkles size={14} aria-hidden />NLA GeoAI summary</span><p>{matches.length ? `${matches.length} synthetic parcels match this ${operation.name.toLowerCase()}, covering ${(totalArea / 10_000).toFixed(2)} hectares. The largest concentration is in ${dominantSector} Sector.` : `No synthetic parcels matched the current ${operation.name.toLowerCase()} settings. Increase the distance or broaden the attribute filters and run it again.`}</p><div><b>Recommended next action</b><p>An authorized GIS or Land Use officer should verify source geometry and current official records before administrative use.</p></div><button disabled={!matches.length} onClick={() => { downloadSimplePdf(`${operation.name} Report`, `NLA-GEO-${Date.now().toString().slice(-6)}`); notify("GIS analysis PDF downloaded"); }}><FileDown size={14} aria-hidden />Generate PDF report</button></div></div></div>}
+  return <div className="analysis-layout"><aside className="analysis-menu"><p>Analysis operations</p>{ANALYSIS_OPERATIONS.map((item) => { const Icon = item.icon; return <button key={item.name} className={operation.name === item.name ? "active" : ""} onClick={() => chooseOperation(item)}><span><Icon size={14} strokeWidth={1.9} aria-hidden /></span>{item.name}</button>; })}</aside><section className="analysis-content"><form className="panel analysis-form" onSubmit={run}><div className="operation-title"><span><OperationIcon size={19} aria-hidden /></span><div><p>Open geospatial engine</p><h2>{operation.name}</h2></div><em>Turf · {operation.functionName}</em></div><div className="form-grid">{(operation.source === "road" || operation.source === "intersection") && <label>Select road<select value={road} onChange={(event) => setRoad(event.target.value)}><option>KN 5 Road</option><option>KK 15 Road</option><option>NR 4 Corridor</option></select></label>}<label>{operation.parameterLabel}<div className="input-suffix"><input aria-label={operation.parameterLabel} type="number" min="0" max={operation.source === "area" || operation.source === "attribute" ? 10000 : 2500} value={parameter} onChange={(event) => setParameter(Number(event.target.value))} /><span>{operation.parameterUnit}</span></div></label><label>Land use<select value={landUse} onChange={(event) => setLandUse(event.target.value as typeof landUse)}><option>All categories</option><option>Agriculture</option><option>Residential</option><option>Commercial</option><option>Mixed Use</option><option>Conservation</option></select></label><label>District<select value={district} onChange={(event) => setDistrict(event.target.value)}><option>All districts</option><option>Gasabo</option><option>Kicukiro</option><option>Nyarugenge</option><option>Musanze</option><option>Huye</option><option>Bugesera</option></select></label><label>Zoning<select value={zoning} onChange={(event) => setZoning(event.target.value)}><option>All zones</option><option>R1</option><option>R2</option><option>R3</option><option>C1</option><option>AG</option><option>OS</option></select></label></div><div className="safe-query"><span><ShieldCheck size={17} aria-hidden /></span><p><b>Controlled spatial operation</b><small>Turf.js runs buffer, intersection, nearest-line and geodesic-area calculations on shared GeoJSON. <code>{operation.functionName}</code> names the production PostGIS equivalent; no SQL is generated or executed.</small></p></div><button className="primary-button run-button" type="submit" disabled={running}>{running ? <><LoaderCircle className="spin" size={16} aria-hidden />Running analysis…</> : <><Play size={16} fill="currentColor" aria-hidden />Run analysis</>}</button></form>
+      {!complete && !running && <div className="analysis-empty"><span><Boxes size={29} aria-hidden /></span><h2>Configure and run the workflow</h2><p>Results are calculated from shared GeoJSON parcel, road and wetland geometry—not stored distance labels.</p><small>Turf.js geodesic operations · WGS84 · Proj4 UTM 36S output</small></div>}
+      {running && <div className="analysis-empty running"><span><LoaderCircle className="spin" size={29} aria-hidden /></span><h2>Processing real geometry</h2><p>Applying Turf.js {operation.functionName} equivalent logic to the demonstration GeoJSON.</p></div>}
+      {complete && <div className="analysis-results fresh"><div className="results-head"><div><span>Completed · Turf.js · EPSG:4326 → EPSG:32736</span><h2>{matches.length} {matches.length === 1 ? "parcel" : "parcels"} matched</h2><p>{operation.name}: {context} in {district === "All districts" ? "all demonstration districts" : district}.</p></div><div><button onClick={() => onOpenMap(matches)} disabled={!matches.length}><MapIcon size={14} aria-hidden />View map</button><button onClick={() => { downloadAnalysisCsv(matches, operation.name, metrics); notify("Analysis CSV downloaded with geometry metrics"); }} disabled={!matches.length}><Download size={14} aria-hidden />Export CSV</button></div></div><div className="impact-grid"><div><span>Geodesic matched area</span><b>{(totalArea / 10_000).toFixed(2)} ha</b><small>Across {matches.length} GeoJSON parcels</small></div><div className="high"><span>High priority</span><b>{high}</b><small>Closest or largest matches</small></div><div className="medium"><span>Medium priority</span><b>{medium}</b><small>Middle analysis band</small></div><div className="low"><span>Low priority</span><b>{low}</b><small>Remaining matches</small></div></div><div className="result-map-row"><div className="result-map"><ParcelMap compact selected={matches[0]} highlightedUpis={matches.map((parcel) => parcel.upi)} /><div className="result-upis">{matches.slice(0, 4).map((parcel) => <span key={parcel.upi}>{parcel.upi}</span>)}{matches.length > 4 && <em>+{matches.length - 4} more</em>}</div></div><div className="ai-summary"><span><Sparkles size={14} aria-hidden />NLA GeoAI summary</span><p>{matches.length ? `${matches.length} synthetic parcel geometries match this ${operation.name.toLowerCase()}, covering ${(totalArea / 10_000).toFixed(2)} geodesic hectares. The largest concentration is in ${dominantSector} Sector.` : `No synthetic parcel geometry matched the current ${operation.name.toLowerCase()} settings. Increase the distance or broaden the attribute filters and run it again.`}</p><div><b>Recommended next action</b><p>An authorized GIS or Land Use officer should verify source geometry and current official records before administrative use.</p></div><button disabled={!matches.length} onClick={() => { downloadSimplePdf(`${operation.name} Report`, `NLA-GEO-${Date.now().toString().slice(-6)}`); notify("GIS analysis PDF downloaded"); }}><FileDown size={14} aria-hidden />Generate PDF report</button></div></div></div>}
     </section></div>;
 }
 
@@ -435,9 +476,31 @@ function AuditPage() {
   return <section className="panel audit-panel"><div className="audit-tools"><div className="field-search"><span>⌕</span><input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search user, action or module…" /></div><select><option>All actions</option><option>AI_QUERY</option><option>RUN_SPATIAL_ANALYSIS</option></select><select><option>Today</option><option>Last 7 days</option></select><button>Export audit log</button></div><div className="audit-timeline">{events.map((e) => <div className="audit-event" key={`${e.time}-${e.action}`}><time>{e.time}<small>10 Aug 2026</small></time><span className={e.result === "Blocked" ? "blocked" : ""}>{e.result === "Blocked" ? "!" : "✓"}</span><div><b>{e.action}</b><p>{e.target}</p><small>{e.user} · {e.module} · IP retained securely</small></div><em className={e.result === "Blocked" ? "bad" : "good"}>{e.result}</em></div>)}</div></section>;
 }
 
-function AdminPage({ notify }: { notify: (s: string) => void }) { return <div className="admin-layout"><section className="admin-summary"><article><span>US</span><div><b>71</b><p>Active users</p></div><em>+4 this month</em></article><article><span>RL</span><div><b>9</b><p>Defined roles</p></div><em>RBAC enforced</em></article><article><span>KY</span><div><b>0</b><p>Exposed secrets</p></div><em>Environment protected</em></article></section><section className="panel roles-panel"><PanelHeader title="Roles and access" detail="Prototype role-based permissions" action="Add role" onAction={() => notify("Role creation panel opened")} /><div className="role-grid">{roles.map((r) => <button key={r.name} onClick={() => notify(`${r.name} permissions opened`)}><span>{r.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}</span><div><b>{r.name}</b><small>{r.scope}</small></div><em>{r.users} users</em><i>›</i></button>)}</div></section><section className="admin-cards"><article className="panel"><PanelHeader title="AI provider" detail="Environment-based configuration" /><div className="provider"><span>✦</span><p><b>Mock AI mode</b><small>No production API key configured</small></p><em>Active</em></div><button className="secondary-button full" onClick={() => notify("Provider configuration opened")}>Configure provider</button></article><article className="panel"><PanelHeader title="Data connectors" detail="Least-privilege service access" /><ContextItem mark="LA" title="LAIS connector" meta="Mock data only" status="Healthy" /><ContextItem mark="PG" title="PostGIS" meta="Approved functions" status="Healthy" /><ContextItem mark="NS" title="NSDI catalogue" meta="Metadata service" status="Healthy" /></article><article className="panel"><PanelHeader title="Security controls" detail="Prototype policy enforcement" /><div className="security-list"><p><span>✓</span>Role-based access control</p><p><span>✓</span>JWT/session verification</p><p><span>✓</span>Rate limiting policy</p><p><span>✓</span>Audit event capture</p><p><span>✓</span>HTTPS-ready deployment</p></div></article></section></div>; }
+function AdminPage({ notify }: { notify: (s: string) => void }) { return <div className="admin-layout"><section className="admin-summary"><article><span>US</span><div><b>71</b><p>Demonstration users</p></div><em>Prototype data</em></article><article><span>RL</span><div><b>9</b><p>Defined roles</p></div><em>UI policy demo</em></article><article><span>KY</span><div><b>0</b><p>Required AI keys</p></div><em>Local inference</em></article></section><section className="panel roles-panel"><PanelHeader title="Roles and access" detail="Prototype role-based permissions" action="Add role" onAction={() => notify("Role creation panel opened")} /><div className="role-grid">{roles.map((r) => <button key={r.name} onClick={() => notify(`${r.name} permissions opened`)}><span>{r.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}</span><div><b>{r.name}</b><small>{r.scope}</small></div><em>{r.users} users</em><i>›</i></button>)}</div></section><section className="admin-cards"><article className="panel"><PanelHeader title="AI runtime" detail="No-key browser integration" /><div className="provider"><span>✦</span><p><b>NLA Local GeoAI</b><small>Transformers.js · quantized WASM model</small></p><em>On demand</em></div><button className="secondary-button full" onClick={() => notify("Enable the local model from the NLA GeoAI workspace")}>Open NLA GeoAI to enable</button></article><article className="panel"><PanelHeader title="Data connectors" detail="Current demonstration state" /><ContextItem mark="OS" title="OpenStreetMap" meta="Photon · Overpass · open tiles" status="Live" /><ContextItem mark="LA" title="LAIS connector" meta="No official connection" status="Demo only" /><ContextItem mark="PG" title="PostGIS" meta="Production migration target" status="Not configured" /></article><article className="panel"><PanelHeader title="Security boundaries" detail="Functional demo safeguards" /><div className="security-list"><p><span>✓</span>No unrestricted spatial SQL</p><p><span>✓</span>No AI provider key required</p><p><span>✓</span>Local GeoJSON import stays in-browser</p><p><span>✓</span>Official LAIS data is not represented</p><p><span>✓</span>HTTPS-ready Vercel deployment</p></div></article></section></div>; }
 
 function HealthPage() {
-  const services = [["PostgreSQL database", "Healthy", "18 ms"], ["PostGIS spatial engine", "Healthy", "24 ms"], ["AI provider", "Warning", "Mock mode"], ["pgvector knowledge index", "Healthy", "31 ms"], ["GIS layer service", "Healthy", "42 ms"], ["LAIS mock connector", "Healthy", "27 ms"], ["NSDI catalogue", "Healthy", "21 ms"], ["Object storage", "Healthy", "34 ms"]];
-  return <div className="health-layout"><section className="health-hero"><div className="health-ring"><span>99.8%</span><small>prototype uptime</small></div><div><span className="eyebrow">All core services available</span><h2>Operational with one advisory</h2><p>The platform is ready for demonstration. AI responses are running in safe mock mode until an authorized provider key is configured.</p><time>Last checked · 10 Aug 2026, 19:42 CAT</time></div></section><section className="service-grid">{services.map(([name, status, latency]) => <article key={name}><div><span className={status.toLowerCase()}><i />{status}</span><em>{latency}</em></div><h3>{name}</h3><p>{status === "Warning" ? "Deterministic prototype responses enabled" : "Connection check passed"}</p><div className="sparkline">{[4, 7, 5, 8, 6, 9, 7, 10, 8, 9].map((h, i) => <i key={i} style={{ height: `${h * 3}px` }} />)}</div></article>)}</section><section className="deployment-panel"><span>VC</span><div><p>VERCEL DEPLOYMENT</p><h2>Production build configuration ready</h2><span>Next.js frontend and Python FastAPI functions share one deployment with environment-managed secrets.</span></div><em>Ready</em></section></div>;
+  const [health, setHealth] = useState<{ checkedAt: string; services: { id: string; name: string; status: "Available" | "Unavailable"; latencyMs: number | null; detail: string }[]; engines: { name: string; detail: string; status: string }[] } | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/system/health", { cache: "no-store", signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Health endpoint unavailable")))
+      .then(setHealth)
+      .catch(() => setHealth(null));
+    return () => controller.abort();
+  }, []);
+
+  const localServices = [
+    { name: "Turf.js spatial engine", status: "Available", detail: "Real browser-side buffer, intersection, distance and area", latency: "Local" },
+    { name: "Proj4js CRS engine", status: "Available", detail: "WGS84 to Rwanda UTM zone 36S", latency: "Local" },
+    { name: "Leaflet + MapLibre", status: "Available", detail: "Interactive 2D and 3D mapping", latency: "Local" },
+    { name: "NLA Local GeoAI", status: "On demand", detail: "No-key Transformers.js browser inference", latency: "WASM" },
+    { name: "LAIS connector", status: "Not configured", detail: "No official land registry connection in this demo", latency: "—" },
+  ];
+  const liveServices = health?.services.map((service) => ({ name: service.name, status: service.status, detail: service.detail, latency: service.latencyMs === null ? "—" : `${service.latencyMs} ms` })) ?? [
+    { name: "Open mapping services", status: "Checking", detail: "Verifying Photon, Overpass and OpenFreeMap", latency: "…" },
+  ];
+  const services = [...localServices, ...liveServices];
+  const available = services.filter((service) => service.status === "Available" || service.status === "On demand").length;
+  return <div className="health-layout"><section className="health-hero"><div className="health-ring"><span>{available}/{services.length}</span><small>capabilities ready</small></div><div><span className="eyebrow">Open-stack observability</span><h2>Functional geospatial demo</h2><p>Local engines are verified by the application. External OpenStreetMap services are checked live; official LAIS and production PostGIS connections are intentionally not claimed.</p><time>{health ? `Last checked · ${new Date(health.checkedAt).toLocaleString("en-RW", { timeZone: "Africa/Kigali", dateStyle: "medium", timeStyle: "short" })}` : "Checking external open services…"}</time></div></section><section className="service-grid">{services.map((service) => <article key={service.name}><div><span className={service.status === "Available" ? "available" : service.status === "On demand" || service.status === "Checking" ? "warning" : "unavailable"}><i />{service.status}</span><em>{service.latency}</em></div><h3>{service.name}</h3><p>{service.detail}</p><div className="sparkline">{[4, 7, 5, 8, 6, 9, 7, 10, 8, 9].map((height, index) => <i key={index} style={{ height: `${height * 3}px` }} />)}</div></article>)}</section><section className="deployment-panel"><span>VC</span><div><p>VERCEL DEPLOYMENT</p><h2>One deployable Next.js application</h2><span>Browser GIS and AI engines work without provider keys; server routes proxy and monitor public open-data services.</span></div><em>Build ready</em></section></div>;
 }

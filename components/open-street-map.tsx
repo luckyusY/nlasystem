@@ -1,16 +1,20 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { LayerGroup, Map as LeafletMap, TileLayer } from "leaflet";
-import { Box, Download, Eraser, Expand, LocateFixed, Map, MapPinned, MousePointer2, Mountain, Ruler, Satellite, ScanLine } from "lucide-react";
+import type { GeoJsonObject } from "geojson";
+import { Box, Download, Eraser, Expand, LocateFixed, Map, MapPinned, MousePointer2, Mountain, Ruler, Satellite, ScanLine, Upload } from "lucide-react";
 import { parcels, type Parcel } from "@/lib/data";
+import { calculatePolygonArea, getReferenceLayers, KIGALI_CENTER_LATLNG, parcelCenterLatLng, parcelRingLatLng, RWANDA_BOUNDS } from "@/lib/geospatial-engine";
 
 const ThreeDMap = dynamic(() => import("@/components/three-d-map"), { ssr: false, loading: () => <div className="three-d-map-loading"><Box size={20} aria-hidden />Loading the 3D engine…</div> });
 
 export type MapLayerVisibility = {
   parcels: boolean;
   osmPlaces: boolean;
+  roads: boolean;
+  wetlands: boolean;
   zoning: boolean;
   boundaries: boolean;
 };
@@ -32,17 +36,6 @@ type SearchResult = { id: string; name: string; description: string; category: s
 type OsmFeature = { id: string; name: string; category: string; lat: number; lon: number };
 type PhotonFeature = { geometry?: { coordinates?: [number, number] }; properties?: { osm_id?: number; osm_type?: string; osm_key?: string; osm_value?: string; type?: string; name?: string; street?: string; district?: string; city?: string; state?: string; countrycode?: string } };
 type OverpassElement = { id: number; type: string; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string> };
-
-const KIGALI_CENTER: [number, number] = [-1.9536, 30.0606];
-const RWANDA_BOUNDS: [[number, number], [number, number]] = [[-2.85, 28.86], [-1.05, 30.9]];
-const DISTRICT_CENTERS: Record<string, [number, number]> = {
-  Gasabo: [-1.9325, 30.1015],
-  Kicukiro: [-1.9858, 30.1072],
-  Nyarugenge: [-1.9598, 30.0436],
-  Musanze: [-1.4998, 29.6344],
-  Huye: [-2.5967, 29.7398],
-  Bugesera: [-2.1412, 30.0804],
-};
 
 const BASEMAPS: Record<BasemapKey, { label: string; detail: string; url: string; attribution: string; maxNativeZoom: number }> = {
   street: {
@@ -76,20 +69,6 @@ const LAND_USE_COLORS: Record<Parcel["landUse"], string> = {
   Conservation: "#21633f",
 };
 
-function parcelCenter(parcel: Parcel, index: number): [number, number] {
-  const base = DISTRICT_CENTERS[parcel.district] ?? KIGALI_CENTER;
-  const column = (index % 7) - 3;
-  const row = (Math.floor(index / 7) % 7) - 3;
-  return [base[0] + row * 0.0037 + (index % 3) * 0.0007, base[1] + column * 0.0042 + (index % 4) * 0.0005];
-}
-
-function parcelShape(parcel: Parcel, index: number): [number, number][] {
-  const [lat, lng] = parcelCenter(parcel, index);
-  const size = Math.min(0.0028, 0.00115 + parcel.area / 8_000_000);
-  const skew = ((index % 4) - 1.5) * 0.00018;
-  return [[lat - size, lng - size + skew], [lat - size * 0.72, lng + size], [lat + size, lng + size * 0.8 - skew], [lat + size * 0.82, lng - size]];
-}
-
 function popupContent(title: string, detail: string) {
   const content = document.createElement("div");
   const heading = document.createElement("strong");
@@ -99,19 +78,6 @@ function popupContent(title: string, detail: string) {
   content.className = "osm-popup-content";
   content.append(heading, description);
   return content;
-}
-
-function polygonArea(points: { lat: number; lng: number }[]) {
-  if (points.length < 3) return 0;
-  const radius = 6_378_137;
-  const radians = (value: number) => value * Math.PI / 180;
-  let area = 0;
-  for (let index = 0; index < points.length; index += 1) {
-    const current = points[index];
-    const next = points[(index + 1) % points.length];
-    area += radians(next.lng - current.lng) * (2 + Math.sin(radians(current.lat)) + Math.sin(radians(next.lat)));
-  }
-  return Math.abs(area * radius * radius / 2);
 }
 
 function normalizePhotonResults(features: PhotonFeature[]) {
@@ -175,6 +141,8 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   const overlaysRef = useRef<LayerGroup | null>(null);
   const drawingRef = useRef<LayerGroup | null>(null);
   const searchMarkerRef = useRef<LayerGroup | null>(null);
+  const importedLayerRef = useRef<LayerGroup | null>(null);
+  const geoJsonInputRef = useRef<HTMLInputElement>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const notifyRef = useRef(onNotify);
   const [ready, setReady] = useState(false);
@@ -191,6 +159,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   const [placesReload, setPlacesReload] = useState(0);
   const shownParcels = useMemo(() => compact ? parcels.slice(0, 12) : parcels, [compact]);
   const highlightedSet = useMemo(() => new Set(highlightedUpis), [highlightedUpis]);
+  const referenceLayers = useMemo(() => getReferenceLayers(), []);
 
   useEffect(() => { notifyRef.current = onNotify; }, [onNotify]);
 
@@ -200,7 +169,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     void import("leaflet").then((L) => {
       if (disposed || !containerRef.current) return;
       const map = L.map(containerRef.current, {
-        center: KIGALI_CENTER,
+        center: KIGALI_CENTER_LATLNG,
         zoom: compact ? 13 : 12,
         minZoom: 5,
         maxZoom: 19,
@@ -216,6 +185,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
       mapRef.current = map;
       drawingRef.current = L.layerGroup().addTo(map);
       searchMarkerRef.current = L.layerGroup().addTo(map);
+      importedLayerRef.current = L.layerGroup().addTo(map);
       setReady(true);
       window.setTimeout(() => map.invalidateSize(), 0);
     });
@@ -224,6 +194,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
       overlaysRef.current?.remove();
       drawingRef.current?.remove();
       searchMarkerRef.current?.remove();
+      importedLayerRef.current?.remove();
       baseLayerRef.current?.remove();
       mapRef.current?.remove();
       mapRef.current = null;
@@ -260,11 +231,23 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     if (visibleLayers?.zoning) {
       L.circle([-1.944, 30.095], { radius: 2_100, color: "#7659a8", fillColor: "#b8a8d4", fillOpacity: 0.12, weight: 2, interactive: false }).addTo(overlays);
     }
+    if (visibleLayers?.wetlands ?? true) {
+      L.geoJSON(referenceLayers.wetlands, {
+        style: { color: "#078aaa", weight: 2, fillColor: "#69c7dc", fillOpacity: 0.24, dashArray: "5 4" },
+        onEachFeature: (feature, layer) => layer.bindTooltip(String(feature.properties?.name ?? "Demo wetland reference"), { sticky: true }),
+      }).addTo(overlays);
+    }
+    if (visibleLayers?.roads ?? true) {
+      L.geoJSON(referenceLayers.roads, {
+        style: { color: "#e77817", weight: 4, opacity: 0.86 },
+        onEachFeature: (feature, layer) => layer.bindTooltip(String(feature.properties?.name ?? "Analysis road"), { sticky: true }),
+      }).addTo(overlays);
+    }
     if (visibleLayers?.parcels ?? true) {
       shownParcels.forEach((parcel, index) => {
         const isSelected = selected?.upi === parcel.upi;
         const isHighlighted = highlightedSet.has(parcel.upi);
-        const polygon = L.polygon(parcelShape(parcel, index), { color: isSelected ? "#ffd400" : isHighlighted ? "#e77817" : LAND_USE_COLORS[parcel.landUse], fillColor: isHighlighted ? "#ffad45" : LAND_USE_COLORS[parcel.landUse], fillOpacity: isSelected ? 0.72 : isHighlighted ? 0.64 : 0.42, weight: isSelected ? 4 : isHighlighted ? 3 : 2 });
+        const polygon = L.polygon(parcelRingLatLng(parcel, index), { color: isSelected ? "#ffd400" : isHighlighted ? "#e77817" : LAND_USE_COLORS[parcel.landUse], fillColor: isHighlighted ? "#ffad45" : LAND_USE_COLORS[parcel.landUse], fillOpacity: isSelected ? 0.72 : isHighlighted ? 0.64 : 0.42, weight: isSelected ? 4 : isHighlighted ? 3 : 2 });
         polygon.bindTooltip(popupContent(parcel.upi, `${parcel.district} · ${parcel.landUse}`), { sticky: true, direction: "top" });
         polygon.on("click", () => onSelect?.(parcel));
         polygon.addTo(overlays);
@@ -277,13 +260,13 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
         marker.addTo(overlays);
       });
     }
-  }, [highlightedSet, onSelect, osmFeatures, ready, selected, shownParcels, visibleLayers]);
+  }, [highlightedSet, onSelect, osmFeatures, ready, referenceLayers, selected, shownParcels, visibleLayers]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map || !selected) return;
     const index = parcels.findIndex((parcel) => parcel.upi === selected.upi);
-    if (index >= 0) map.flyTo(parcelCenter(selected, index), compact ? 14 : Math.max(map.getZoom(), 14), { duration: compact ? 0 : 0.55 });
+    if (index >= 0) map.flyTo(parcelCenterLatLng(selected, index), compact ? 15 : Math.max(map.getZoom(), 15), { duration: compact ? 0 : 0.55 });
   }, [compact, ready, selected]);
 
   useEffect(() => {
@@ -307,7 +290,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
         if (points.length > 1) setMeasurement(metres >= 1000 ? `${(metres / 1000).toFixed(2)} km` : `${Math.round(metres)} m`);
       } else {
         L.polygon(points.map((point) => [point.lat, point.lng]), { color: "#21633f", fillColor: "#ffd400", fillOpacity: 0.25, weight: 3 }).addTo(group);
-        const area = polygonArea(points);
+        const area = calculatePolygonArea(points);
         if (points.length > 2) setMeasurement(area >= 10_000 ? `${(area / 10_000).toFixed(2)} ha` : `${Math.round(area).toLocaleString()} m²`);
       }
     };
@@ -405,6 +388,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   function clearMapWork() {
     drawingRef.current?.clearLayers();
     searchMarkerRef.current?.clearLayers();
+    importedLayerRef.current?.clearLayers();
     setMeasurement("");
     setActiveTool("select");
     onClearSelection?.();
@@ -413,8 +397,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   function exportSelectedParcel() {
     if (!selected) { notifyRef.current?.("Select a prototype parcel before exporting"); return; }
     const index = parcels.findIndex((parcel) => parcel.upi === selected.upi);
-    const coordinates = parcelShape(selected, Math.max(0, index)).map(([lat, lon]) => [lon, lat]);
-    coordinates.push(coordinates[0]);
+    const coordinates = parcelRingLatLng(selected, Math.max(0, index)).map(([lat, lon]) => [lon, lat]);
     const feature = { type: "Feature", properties: { upi: selected.upi, district: selected.district, sector: selected.sector, landUse: selected.landUse, zoning: selected.zoning, source: "NLA GeoAI synthetic demonstration parcel" }, geometry: { type: "Polygon", coordinates: [coordinates] } };
     const url = URL.createObjectURL(new Blob([JSON.stringify(feature, null, 2)], { type: "application/geo+json" }));
     const anchor = document.createElement("a");
@@ -423,6 +406,33 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     anchor.click();
     URL.revokeObjectURL(url);
     notifyRef.current?.("Selected parcel exported as GeoJSON");
+  }
+
+  async function importGeoJson(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 5_000_000) { notifyRef.current?.("GeoJSON must be smaller than 5 MB"); return; }
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    const destination = importedLayerRef.current;
+    if (!L || !map || !destination) return;
+    try {
+      const parsed = JSON.parse(await file.text()) as { type?: string; features?: unknown[] };
+      if (parsed.type !== "Feature" && parsed.type !== "FeatureCollection") throw new Error("Unsupported GeoJSON root");
+      const layer = L.geoJSON(parsed as GeoJsonObject, {
+        style: { color: "#e77817", weight: 3, fillColor: "#ffad45", fillOpacity: 0.24 },
+        pointToLayer: (_feature, latlng) => L.circleMarker(latlng, { radius: 7, color: "#e77817", fillColor: "#ffd400", fillOpacity: 0.9, weight: 2 }),
+      });
+      destination.clearLayers();
+      layer.eachLayer((item) => destination.addLayer(item));
+      const bounds = layer.getBounds();
+      if (bounds.isValid()) map.fitBounds(bounds.pad(0.15), { maxZoom: 16 });
+      const count = parsed.type === "FeatureCollection" ? parsed.features?.length ?? 0 : 1;
+      notifyRef.current?.(`${count} GeoJSON ${count === 1 ? "feature" : "features"} loaded locally`);
+    } catch {
+      notifyRef.current?.("That file is not valid GeoJSON");
+    }
   }
 
   async function toggleFullscreen() {
@@ -449,8 +459,10 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
           <button aria-label="Fit Rwanda" onClick={() => mapRef.current?.fitBounds(RWANDA_BOUNDS)} title="Fit Rwanda"><MapPinned size={16} aria-hidden /></button>
           <button aria-label="Clear map work" onClick={clearMapWork} title="Clear map work"><Eraser size={16} aria-hidden /></button>
           <button aria-label="Export selected parcel as GeoJSON" onClick={exportSelectedParcel} disabled={!selected} title="Export selected parcel as GeoJSON"><Download size={16} aria-hidden /></button>
+          <button aria-label="Import GeoJSON" onClick={() => geoJsonInputRef.current?.click()} title="Import GeoJSON locally"><Upload size={16} aria-hidden /></button>
           <button aria-label="Toggle fullscreen" onClick={() => void toggleFullscreen()} title="Toggle fullscreen"><Expand size={16} aria-hidden /></button>
         </div>
+        <input ref={geoJsonInputRef} className="geojson-file-input" type="file" accept=".geojson,.json,application/geo+json,application/json" onChange={(event) => void importGeoJson(event)} />
         {visibleLayers?.osmPlaces && <button className="osm-refresh-places" onClick={() => setPlacesReload((value) => value + 1)} disabled={placesLoading}>{placesLoading ? "Loading open places…" : `Refresh OSM places · ${osmFeatures.length}`}</button>}
         {measurement && <div className="osm-measurement"><span>{activeTool === "distance" ? "Distance" : "Area"}</span><b>{measurement}</b><button onClick={() => { setActiveTool("select"); setMeasurement(""); }}>Done</button></div>}
         <div className="osm-map-status"><i />{BASEMAPS[basemap].label} · open data{visibleLayers?.parcels ? " + synthetic parcels" : ""}</div>

@@ -5,42 +5,13 @@ import { Box, Building2 } from "lucide-react";
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap, MapLayerMouseEvent } from "maplibre-gl";
 import { parcels, type Parcel } from "@/lib/data";
+import { KIGALI_CENTER_LNGLAT, parcelCenterLngLat, parcelRingLngLat } from "@/lib/geospatial-engine";
 
 type ThreeDMapProps = {
   selected?: Parcel;
   onSelect?: (parcel: Parcel) => void;
   highlightedUpis?: string[];
 };
-
-const KIGALI_CENTER: [number, number] = [30.0606, -1.9536];
-const DISTRICT_CENTERS: Record<string, [number, number]> = {
-  Gasabo: [30.1015, -1.9325],
-  Kicukiro: [30.1072, -1.9858],
-  Nyarugenge: [30.038, -1.9675],
-  Musanze: [29.6344, -1.5007],
-  Huye: [29.739, -2.5967],
-  Bugesera: [30.0804, -2.1412],
-};
-
-function parcelCenter(parcel: Parcel, index: number): [number, number] {
-  const base = DISTRICT_CENTERS[parcel.district] ?? KIGALI_CENTER;
-  const column = (index % 7) - 3;
-  const row = (Math.floor(index / 7) % 6) - 2;
-  return [base[0] + column * 0.0042 + (index % 4) * 0.0005, base[1] + row * 0.0037 + (index % 3) * 0.0007];
-}
-
-function parcelRing(parcel: Parcel, index: number) {
-  const [lng, lat] = parcelCenter(parcel, index);
-  const size = Math.min(0.0028, 0.00115 + parcel.area / 8_000_000);
-  const skew = ((index % 4) - 1.5) * 0.00018;
-  const ring = [
-    [lng - size + skew, lat - size],
-    [lng + size, lat - size * 0.72],
-    [lng + size * 0.8 - skew, lat + size],
-    [lng - size, lat + size * 0.82],
-  ];
-  return [...ring, ring[0]];
-}
 
 function parcelCollection(selectedUpi?: string, highlightedUpis: string[] = []) {
   const highlighted = new Set(highlightedUpis);
@@ -56,7 +27,7 @@ function parcelCollection(selectedUpi?: string, highlightedUpis: string[] = []) 
         highlighted: highlighted.has(parcel.upi) ? 1 : 0,
         height: parcel.upi === selectedUpi ? 28 : highlighted.has(parcel.upi) ? 20 : 7 + (index % 5) * 3,
       },
-      geometry: { type: "Polygon" as const, coordinates: [parcelRing(parcel, index)] },
+      geometry: { type: "Polygon" as const, coordinates: [parcelRingLngLat(parcel, index)] },
     })),
   };
 }
@@ -92,7 +63,7 @@ export default function ThreeDMap({ selected, onSelect, highlightedUpis = [] }: 
       if (disposed || !containerRef.current) return;
       const initialSelected = initialSelectedRef.current;
       const selectedIndex = initialSelected ? parcels.findIndex((parcel) => parcel.upi === initialSelected.upi) : -1;
-      const center = initialSelected && selectedIndex >= 0 ? parcelCenter(initialSelected, selectedIndex) : KIGALI_CENTER;
+      const center = initialSelected && selectedIndex >= 0 ? parcelCenterLngLat(initialSelected, selectedIndex) : KIGALI_CENTER_LNGLAT;
       const map = new maplibregl.Map({
         container: containerRef.current,
         style: "https://tiles.openfreemap.org/styles/liberty",
@@ -181,7 +152,7 @@ export default function ThreeDMap({ selected, onSelect, highlightedUpis = [] }: 
     source?.setData(parcelCollection(selected?.upi, highlightedUpis));
     if (!selected) return;
     const index = parcels.findIndex((parcel) => parcel.upi === selected.upi);
-    if (index >= 0) map.flyTo({ center: parcelCenter(selected, index), zoom: 16.4, pitch: 62, bearing: -28, duration: 900 });
+    if (index >= 0) map.flyTo({ center: parcelCenterLngLat(selected, index), zoom: 16.4, pitch: 62, bearing: -28, duration: 900 });
   }, [highlightedUpis, ready, selected]);
 
   return <div className="three-d-map" aria-label="Interactive 3D open-source map">
