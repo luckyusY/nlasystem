@@ -1,8 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import type { LayerGroup, Map as LeafletMap, TileLayer } from "leaflet";
+import { Box, Download, Eraser, Expand, LocateFixed, Map, MapPinned, MousePointer2, Mountain, Ruler, Satellite, ScanLine } from "lucide-react";
 import { parcels, type Parcel } from "@/lib/data";
+
+const ThreeDMap = dynamic(() => import("@/components/three-d-map"), { ssr: false, loading: () => <div className="three-d-map-loading"><Box size={20} aria-hidden />Loading the 3D engine…</div> });
 
 export type MapLayerVisibility = {
   parcels: boolean;
@@ -18,10 +22,12 @@ type OpenStreetMapProps = {
   onClearSelection?: () => void;
   onNotify?: (message: string) => void;
   visibleLayers?: Partial<MapLayerVisibility>;
+  highlightedUpis?: string[];
 };
 
 type BasemapKey = "street" | "topographic" | "satellite";
 type MapTool = "select" | "distance" | "area";
+type ViewMode = "2d" | "3d";
 type SearchResult = { id: string; name: string; description: string; category: string; lat: number; lon: number };
 type OsmFeature = { id: string; name: string; category: string; lat: number; lon: number };
 type PhotonFeature = { geometry?: { coordinates?: [number, number] }; properties?: { osm_id?: number; osm_type?: string; osm_key?: string; osm_value?: string; type?: string; name?: string; street?: string; district?: string; city?: string; state?: string; countrycode?: string } };
@@ -161,7 +167,7 @@ out center tags 80;`;
   return normalizeOverpassFeatures(data.elements ?? []);
 }
 
-export default function OpenStreetMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers }: OpenStreetMapProps) {
+export default function OpenStreetMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis = [] }: OpenStreetMapProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -172,6 +178,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const notifyRef = useRef(onNotify);
   const [ready, setReady] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("2d");
   const [basemap, setBasemap] = useState<BasemapKey>("street");
   const [activeTool, setActiveTool] = useState<MapTool>("select");
   const [measurement, setMeasurement] = useState("");
@@ -182,7 +189,8 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   const [osmFeatures, setOsmFeatures] = useState<OsmFeature[]>([]);
   const [placesLoading, setPlacesLoading] = useState(false);
   const [placesReload, setPlacesReload] = useState(0);
-  const shownParcels = useMemo(() => parcels.slice(0, compact ? 12 : 42), [compact]);
+  const shownParcels = useMemo(() => compact ? parcels.slice(0, 12) : parcels, [compact]);
+  const highlightedSet = useMemo(() => new Set(highlightedUpis), [highlightedUpis]);
 
   useEffect(() => { notifyRef.current = onNotify; }, [onNotify]);
 
@@ -235,6 +243,10 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   }, [basemap, ready]);
 
   useEffect(() => {
+    if (viewMode === "2d") window.setTimeout(() => mapRef.current?.invalidateSize(), 80);
+  }, [viewMode]);
+
+  useEffect(() => {
     const L = leafletRef.current;
     const map = mapRef.current;
     if (!ready || !L || !map) return;
@@ -251,7 +263,8 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     if (visibleLayers?.parcels ?? true) {
       shownParcels.forEach((parcel, index) => {
         const isSelected = selected?.upi === parcel.upi;
-        const polygon = L.polygon(parcelShape(parcel, index), { color: isSelected ? "#ffd400" : LAND_USE_COLORS[parcel.landUse], fillColor: LAND_USE_COLORS[parcel.landUse], fillOpacity: isSelected ? 0.72 : 0.42, weight: isSelected ? 4 : 2 });
+        const isHighlighted = highlightedSet.has(parcel.upi);
+        const polygon = L.polygon(parcelShape(parcel, index), { color: isSelected ? "#ffd400" : isHighlighted ? "#e77817" : LAND_USE_COLORS[parcel.landUse], fillColor: isHighlighted ? "#ffad45" : LAND_USE_COLORS[parcel.landUse], fillOpacity: isSelected ? 0.72 : isHighlighted ? 0.64 : 0.42, weight: isSelected ? 4 : isHighlighted ? 3 : 2 });
         polygon.bindTooltip(popupContent(parcel.upi, `${parcel.district} · ${parcel.landUse}`), { sticky: true, direction: "top" });
         polygon.on("click", () => onSelect?.(parcel));
         polygon.addTo(overlays);
@@ -264,7 +277,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
         marker.addTo(overlays);
       });
     }
-  }, [onSelect, osmFeatures, ready, selected, shownParcels, visibleLayers]);
+  }, [highlightedSet, onSelect, osmFeatures, ready, selected, shownParcels, visibleLayers]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -418,26 +431,30 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     window.setTimeout(() => mapRef.current?.invalidateSize(), 120);
   }
 
-  return <div ref={shellRef} className={`osm-map-shell ${compact ? "compact" : ""}`} aria-label="Interactive open-source map">
-    <div ref={containerRef} className="osm-map-canvas" />
+  return <div ref={shellRef} className={`osm-map-shell ${compact ? "compact" : ""} view-${viewMode}`} aria-label="Interactive open-source map">
+    <div ref={containerRef} className={`osm-map-canvas ${viewMode === "3d" ? "map-layer-hidden" : ""}`} />
+    {!compact && viewMode === "3d" && <ThreeDMap selected={selected} onSelect={onSelect} highlightedUpis={highlightedUpis} />}
     {!ready && <div className="osm-map-loading"><span />Loading open map…</div>}
     {!compact && <>
-      <form className="osm-search" onSubmit={searchMap}><span>⌕</span><input aria-label="Search parcels and OpenStreetMap places" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search parcel UPI or any place in Rwanda…" /><button disabled={searching}>{searching ? "…" : "Search"}</button></form>
-      {(searchResults.length > 0 || searchError) && <div className="osm-search-results">{searchError && <p>{searchError}</p>}{searchResults.map((result) => <button key={result.id} onClick={() => openSearchResult(result)}><span>OSM</span><b>{result.name}<small>{result.description}</small></b><i>›</i></button>)}</div>}
-      <div className="osm-basemap-switcher" aria-label="Basemap selection">{(Object.keys(BASEMAPS) as BasemapKey[]).map((key) => <button key={key} className={basemap === key ? "active" : ""} onClick={() => setBasemap(key)} title={BASEMAPS[key].detail}>{key === "street" ? "Street" : key === "topographic" ? "Topo" : "NASA Earth"}</button>)}</div>
-      <div className="osm-map-tools" aria-label="Open mapping tools">
-        <button className={activeTool === "select" ? "active" : ""} onClick={() => { setActiveTool("select"); setMeasurement(""); }} title="Select parcels">SE</button>
-        <button className={activeTool === "distance" ? "active" : ""} onClick={() => setActiveTool("distance")} title="Measure distance">DI</button>
-        <button className={activeTool === "area" ? "active" : ""} onClick={() => setActiveTool("area")} title="Measure area">AR</button>
-        <button onClick={locateUser} title="Find my location">GPS</button>
-        <button onClick={() => mapRef.current?.fitBounds(RWANDA_BOUNDS)} title="Fit Rwanda">RW</button>
-        <button onClick={clearMapWork} title="Clear map work">CL</button>
-        <button onClick={exportSelectedParcel} disabled={!selected} title="Export selected parcel as GeoJSON">EX</button>
-        <button onClick={() => void toggleFullscreen()} title="Toggle fullscreen">FS</button>
-      </div>
-      {visibleLayers?.osmPlaces && <button className="osm-refresh-places" onClick={() => setPlacesReload((value) => value + 1)} disabled={placesLoading}>{placesLoading ? "Loading open places…" : `Refresh OSM places · ${osmFeatures.length}`}</button>}
-      {measurement && <div className="osm-measurement"><span>{activeTool === "distance" ? "Distance" : "Area"}</span><b>{measurement}</b><button onClick={() => { setActiveTool("select"); setMeasurement(""); }}>Done</button></div>}
-      <div className="osm-map-status"><i />{BASEMAPS[basemap].label} · open data{visibleLayers?.parcels ? " + synthetic parcels" : ""}</div>
+      <div className="map-view-switcher" aria-label="Map dimension"><button className={viewMode === "2d" ? "active" : ""} onClick={() => setViewMode("2d")}><Map size={15} aria-hidden /><span>2D map</span></button><button className={viewMode === "3d" ? "active" : ""} onClick={() => setViewMode("3d")}><Box size={15} aria-hidden /><span>3D view</span></button></div>
+      {viewMode === "2d" && <>
+        <form className="osm-search" onSubmit={searchMap}><span>⌕</span><input aria-label="Search parcels and OpenStreetMap places" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search parcel UPI or any place in Rwanda…" /><button disabled={searching}>{searching ? "…" : "Search"}</button></form>
+        {(searchResults.length > 0 || searchError) && <div className="osm-search-results">{searchError && <p>{searchError}</p>}{searchResults.map((result) => <button key={result.id} onClick={() => openSearchResult(result)}><span>OSM</span><b>{result.name}<small>{result.description}</small></b><i>›</i></button>)}</div>}
+        <div className="osm-basemap-switcher" aria-label="Basemap selection">{(Object.keys(BASEMAPS) as BasemapKey[]).map((key) => { const Icon = key === "street" ? Map : key === "topographic" ? Mountain : Satellite; return <button key={key} className={basemap === key ? "active" : ""} onClick={() => setBasemap(key)} title={BASEMAPS[key].detail}><Icon size={13} aria-hidden /><span>{key === "street" ? "Street" : key === "topographic" ? "Topo" : "NASA Earth"}</span></button>; })}</div>
+        <div className="osm-map-tools" aria-label="Open mapping tools">
+          <button aria-label="Select parcels" className={activeTool === "select" ? "active" : ""} onClick={() => { setActiveTool("select"); setMeasurement(""); }} title="Select parcels"><MousePointer2 size={16} aria-hidden /></button>
+          <button aria-label="Measure distance" className={activeTool === "distance" ? "active" : ""} onClick={() => setActiveTool("distance")} title="Measure distance"><Ruler size={16} aria-hidden /></button>
+          <button aria-label="Measure area" className={activeTool === "area" ? "active" : ""} onClick={() => setActiveTool("area")} title="Measure area"><ScanLine size={16} aria-hidden /></button>
+          <button aria-label="Find my location" onClick={locateUser} title="Find my location"><LocateFixed size={16} aria-hidden /></button>
+          <button aria-label="Fit Rwanda" onClick={() => mapRef.current?.fitBounds(RWANDA_BOUNDS)} title="Fit Rwanda"><MapPinned size={16} aria-hidden /></button>
+          <button aria-label="Clear map work" onClick={clearMapWork} title="Clear map work"><Eraser size={16} aria-hidden /></button>
+          <button aria-label="Export selected parcel as GeoJSON" onClick={exportSelectedParcel} disabled={!selected} title="Export selected parcel as GeoJSON"><Download size={16} aria-hidden /></button>
+          <button aria-label="Toggle fullscreen" onClick={() => void toggleFullscreen()} title="Toggle fullscreen"><Expand size={16} aria-hidden /></button>
+        </div>
+        {visibleLayers?.osmPlaces && <button className="osm-refresh-places" onClick={() => setPlacesReload((value) => value + 1)} disabled={placesLoading}>{placesLoading ? "Loading open places…" : `Refresh OSM places · ${osmFeatures.length}`}</button>}
+        {measurement && <div className="osm-measurement"><span>{activeTool === "distance" ? "Distance" : "Area"}</span><b>{measurement}</b><button onClick={() => { setActiveTool("select"); setMeasurement(""); }}>Done</button></div>}
+        <div className="osm-map-status"><i />{BASEMAPS[basemap].label} · open data{visibleLayers?.parcels ? " + synthetic parcels" : ""}</div>
+      </>}
     </>}
   </div>;
 }

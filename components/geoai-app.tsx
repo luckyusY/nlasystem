@@ -2,33 +2,50 @@
 
 import { FormEvent, useState } from "react";
 import Image from "next/image";
+import { BarChart3, Bell, Bot, BookOpen, Boxes, CircleDotDashed, Combine, Database, Download, FileDown, FileText, HeartPulse, Home, LandPlot, LoaderCircle, Map as MapIcon, Menu, MoreHorizontal, Play, Radar, RadioTower, Route, Satellite, ScanLine, ScrollText, Search, Settings, ShieldCheck, Sparkles, Tags, Waves, Workflow, type LucideIcon } from "lucide-react";
 import OpenStreetMap, { type MapLayerVisibility } from "@/components/open-street-map";
 import { auditEvents, corsStations, datasets, documents, parcels, reports, roles, type Parcel } from "@/lib/data";
 
 type PageKey = "dashboard" | "assistant" | "map" | "parcels" | "analysis" | "catalogue" | "knowledge" | "reports" | "cors" | "satellite" | "audit" | "admin" | "health";
 type Message = { id: number; role: "assistant" | "user"; text: string; sources?: string[]; stats?: { label: string; value: string }[]; warning?: string };
 
-const navGroups: { label: string; items: { key: PageKey; label: string; mark: string }[] }[] = [
+const navGroups: { label: string; items: { key: PageKey; label: string }[] }[] = [
   { label: "Workspace", items: [
-    { key: "dashboard", label: "Dashboard", mark: "DB" },
-    { key: "assistant", label: "NLA GeoAI", mark: "AI" },
-    { key: "map", label: "Interactive Map", mark: "MP" },
-    { key: "parcels", label: "Parcels", mark: "PC" },
-    { key: "analysis", label: "GIS Analysis", mark: "GA" },
+    { key: "dashboard", label: "Dashboard" },
+    { key: "assistant", label: "NLA GeoAI" },
+    { key: "map", label: "Interactive Map" },
+    { key: "parcels", label: "Parcels" },
+    { key: "analysis", label: "GIS Analysis" },
   ]},
   { label: "Knowledge", items: [
-    { key: "catalogue", label: "NSDI Catalogue", mark: "NS" },
-    { key: "knowledge", label: "Knowledge Centre", mark: "KC" },
-    { key: "reports", label: "Reports", mark: "RP" },
+    { key: "catalogue", label: "NSDI Catalogue" },
+    { key: "knowledge", label: "Knowledge Centre" },
+    { key: "reports", label: "Reports" },
   ]},
   { label: "Operations", items: [
-    { key: "cors", label: "CORS Monitoring", mark: "GN" },
-    { key: "satellite", label: "Change Detection", mark: "CD" },
-    { key: "audit", label: "Audit Logs", mark: "AL" },
-    { key: "admin", label: "Administration", mark: "AD" },
-    { key: "health", label: "System Health", mark: "SH" },
+    { key: "cors", label: "CORS Monitoring" },
+    { key: "satellite", label: "Change Detection" },
+    { key: "audit", label: "Audit Logs" },
+    { key: "admin", label: "Administration" },
+    { key: "health", label: "System Health" },
   ]},
 ];
+
+const PAGE_ICONS: Record<PageKey, LucideIcon> = {
+  dashboard: BarChart3,
+  assistant: Bot,
+  map: MapIcon,
+  parcels: LandPlot,
+  analysis: Workflow,
+  catalogue: Database,
+  knowledge: BookOpen,
+  reports: FileText,
+  cors: RadioTower,
+  satellite: Satellite,
+  audit: ScrollText,
+  admin: Settings,
+  health: HeartPulse,
+};
 
 const titles: Record<PageKey, { eyebrow: string; title: string; subtitle: string }> = {
   dashboard: { eyebrow: "Operational overview", title: "Good evening, Aline", subtitle: "Here is the current state of the GeoAI prototype workspace." },
@@ -72,6 +89,7 @@ export default function GeoAIApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [analysisMatches, setAnalysisMatches] = useState<string[]>([]);
 
   function navigate(key: PageKey) {
     setPage(key);
@@ -97,11 +115,11 @@ export default function GeoAIApp() {
           {navGroups.map((group) => (
             <div className="nav-group" key={group.label}>
               <p>{group.label}</p>
-              {group.items.map((item) => (
+              {group.items.map((item) => { const Icon = PAGE_ICONS[item.key]; return (
                 <button key={item.key} className={page === item.key ? "active" : ""} onClick={() => navigate(item.key)}>
-                  <span className="nav-mark">{item.mark}</span>{item.label}{page === item.key && <i />}
+                  <span className="nav-mark"><Icon size={14} strokeWidth={1.9} aria-hidden /></span>{item.label}{page === item.key && <i />}
                 </button>
-              ))}
+              ); })}
             </div>
           ))}
         </nav>
@@ -116,13 +134,13 @@ export default function GeoAIApp() {
 
       <main className="main-area">
         <header className="topbar">
-          <button className="menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation">☰</button>
+          <button className="menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Menu size={21} aria-hidden /></button>
           <Image className="mobile-brand-logo" src="/nla-logo.png" alt="National Land Authority" width={1043} height={541} priority />
-          <div className="global-search"><span>⌕</span><input aria-label="Global search" placeholder="Search parcels, datasets, reports…" onKeyDown={(e) => { if (e.key === "Enter") { navigate("parcels"); notify("Search opened in Parcel Registry"); } }} /><kbd>⌘ K</kbd></div>
+          <div className="global-search"><span><Search size={15} aria-hidden /></span><input aria-label="Global search" placeholder="Search parcels, datasets, reports…" onKeyDown={(e) => { if (e.key === "Enter") { navigate("parcels"); notify("Search opened in Parcel Registry"); } }} /><kbd>⌘ K</kbd></div>
           <div className="top-actions">
             <div className="environment"><span /> Prototype data</div>
-            <button className="mobile-search-button" onClick={() => navigate("parcels")} aria-label="Search parcels and datasets">⌕</button>
-            <button className="icon-button" onClick={() => setNoticeOpen(!noticeOpen)} aria-label="Notifications">●<i>3</i></button>
+            <button className="mobile-search-button" onClick={() => navigate("parcels")} aria-label="Search parcels and datasets"><Search size={20} aria-hidden /></button>
+            <button className="icon-button" onClick={() => setNoticeOpen(!noticeOpen)} aria-label="Notifications"><Bell size={17} aria-hidden /><i>3</i></button>
             <div className="header-user"><span>AU</span><div><b>Aline Uwase</b><small>GIS Department · GIS Officer</small></div></div>
           </div>
           {noticeOpen && <div className="notification-popover"><strong>Notifications</strong><p><b>Road layer refreshed</b><span>NSDI metadata · 8 min ago</span></p><p><b>MUSN latency warning</b><span>CORS monitoring · 24 min ago</span></p><p><b>Report ready for review</b><span>NLA-GEO-2026-084 · 1 hr ago</span></p></div>}
@@ -132,9 +150,9 @@ export default function GeoAIApp() {
           <PageIntro page={page} onAsk={() => navigate("assistant")} />
           {page === "dashboard" && <Dashboard onNavigate={navigate} notify={notify} />}
           {page === "assistant" && <AssistantPage onOpenMap={() => navigate("map")} notify={notify} />}
-          {page === "map" && <MapPage notify={notify} />}
+          {page === "map" && <MapPage notify={notify} highlightedUpis={analysisMatches} />}
           {page === "parcels" && <ParcelsPage onAnalyse={() => navigate("assistant")} notify={notify} />}
-          {page === "analysis" && <AnalysisPage onOpenMap={() => navigate("map")} notify={notify} />}
+          {page === "analysis" && <AnalysisPage onOpenMap={(matches) => { setAnalysisMatches(matches.map((parcel) => parcel.upi)); navigate("map"); }} notify={notify} />}
           {page === "catalogue" && <CataloguePage notify={notify} />}
           {page === "knowledge" && <KnowledgePage notify={notify} />}
           {page === "reports" && <ReportsPage notify={notify} />}
@@ -146,14 +164,14 @@ export default function GeoAIApp() {
         </div>
       </main>
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        <button className={page === "dashboard" ? "active" : ""} onClick={() => navigate("dashboard")}><span>DB</span><small>Home</small></button>
-        <button className={page === "assistant" ? "active" : ""} onClick={() => navigate("assistant")}><span>AI</span><small>GeoAI</small></button>
-        <button className={page === "map" ? "active" : ""} onClick={() => navigate("map")}><span>MP</span><small>Map</small></button>
-        <button className={page === "parcels" ? "active" : ""} onClick={() => navigate("parcels")}><span>PC</span><small>Parcels</small></button>
-        <button onClick={() => setSidebarOpen(true)}><span>••</span><small>More</small></button>
+        <button className={page === "dashboard" ? "active" : ""} onClick={() => navigate("dashboard")}><span><Home size={17} aria-hidden /></span><small>Home</small></button>
+        <button className={page === "assistant" ? "active" : ""} onClick={() => navigate("assistant")}><span><Bot size={17} aria-hidden /></span><small>GeoAI</small></button>
+        <button className={page === "map" ? "active" : ""} onClick={() => navigate("map")}><span><MapIcon size={17} aria-hidden /></span><small>Map</small></button>
+        <button className={page === "parcels" ? "active" : ""} onClick={() => navigate("parcels")}><span><LandPlot size={17} aria-hidden /></span><small>Parcels</small></button>
+        <button onClick={() => setSidebarOpen(true)}><span><MoreHorizontal size={18} aria-hidden /></span><small>More</small></button>
       </nav>
       <GeoAISupportBubble onNavigate={navigate} />
-      {toast && <div className="toast"><span>✓</span>{toast}</div>}
+      {toast && <div className="toast"><span><ShieldCheck size={13} aria-hidden /></span>{toast}</div>}
     </div>
   );
 }
@@ -176,21 +194,21 @@ function GeoAISupportBubble({ onNavigate }: { onNavigate: (page: PageKey) => voi
 
   return <div className={`support-widget ${open ? "open" : ""}`}>
     {open && <section className="support-panel" role="dialog" aria-label="NLA GeoAI support" id="geoai-support-panel">
-      <header><div><span>✦</span><p><b>NLA GeoAI Support</b><small><i /> Prototype assistant online</small></p></div><button onClick={() => setOpen(false)} aria-label="Close GeoAI support">×</button></header>
+      <header><div><span><Sparkles size={15} aria-hidden /></span><p><b>NLA GeoAI Support</b><small><i /> Prototype assistant online</small></p></div><button onClick={() => setOpen(false)} aria-label="Close GeoAI support">×</button></header>
       <div className="support-messages" aria-live="polite">
         {messages.map((message) => <div className={`support-message ${message.role}`} key={message.id}><small>{message.role === "assistant" ? "NLA GEOAI" : "YOU"}</small><p>{message.text}</p>{message.warning && <em>Officer verification required</em>}</div>)}
       </div>
-      <div className="support-actions"><button onClick={() => { setOpen(false); onNavigate("map"); }}><span>MP</span>Open street map</button><button onClick={() => ask("Calculate the area of parcel 1/02/03/04/0012.")}><span>PC</span>Check parcel 0012</button></div>
+      <div className="support-actions"><button onClick={() => { setOpen(false); onNavigate("map"); }}><span><MapIcon size={15} aria-hidden /></span>Open street map</button><button onClick={() => ask("Calculate the area of parcel 1/02/03/04/0012.")}><span><LandPlot size={15} aria-hidden /></span>Check parcel 0012</button></div>
       <form onSubmit={(event) => { event.preventDefault(); ask(input); }}><input aria-label="Ask NLA GeoAI support" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask about parcels or land data…" /><button disabled={!input.trim()} aria-label="Send support question">↑</button></form>
       <button className="support-full-link" onClick={() => { setOpen(false); onNavigate("assistant"); }}>Open full GeoAI workspace →</button>
     </section>}
-    <button className="support-launcher" aria-expanded={open} aria-controls="geoai-support-panel" onClick={() => setOpen((current) => !current)}><span>✦</span><b>{open ? "Close" : "Ask NLA GeoAI"}</b>{!open && <i>1</i>}</button>
+    <button className="support-launcher" aria-expanded={open} aria-controls="geoai-support-panel" onClick={() => setOpen((current) => !current)}><span><Sparkles size={17} aria-hidden /></span><b>{open ? "Close" : "Ask NLA GeoAI"}</b>{!open && <i>1</i>}</button>
   </div>;
 }
 
 function PageIntro({ page, onAsk }: { page: PageKey; onAsk: () => void }) {
   const info = titles[page];
-  return <section className="page-intro"><div><p>{info.eyebrow}</p><h1>{info.title}</h1><span>{info.subtitle}</span></div>{page !== "assistant" && <button className="primary-button" onClick={onAsk}><span>✦</span> Ask NLA GeoAI</button>}</section>;
+  return <section className="page-intro"><div><p>{info.eyebrow}</p><h1>{info.title}</h1><span>{info.subtitle}</span></div>{page !== "assistant" && <button className="primary-button" onClick={onAsk}><Sparkles size={15} aria-hidden /> Ask NLA GeoAI</button>}</section>;
 }
 
 function Dashboard({ onNavigate, notify }: { onNavigate: (p: PageKey) => void; notify: (s: string) => void }) {
@@ -206,7 +224,7 @@ function Dashboard({ onNavigate, notify }: { onNavigate: (p: PageKey) => void; n
       <article className="panel span-2"><PanelHeader title="Recent GeoAI queries" detail="Answers grounded in connected prototype sources" action="Open assistant" onAction={() => onNavigate("assistant")} /><div className="activity-list"><Activity mark="AU" title="Agricultural parcels within 100 m of KN 5 Road" meta="Aline Uwase · GIS · 6 min ago" tag="37 parcels" /><Activity mark="JM" title="Documents discussing subdivision requirements" meta="Jean Mutesi · Registrar · 18 min ago" tag="2 sources" /><Activity mark="EN" title="Wetland overlap for parcel 1/02/03/04/0012" meta="Eric Niyonzima · Land Use · 34 min ago" tag="No overlap" /></div></article>
       <article className="panel"><PanelHeader title="System notices" detail="Items that may need attention" /><div className="notice-list"><div className="notice warning"><i>!</i><p><b>MUSN station latency</b><span>286 ms · increasing for 45 min</span></p></div><div className="notice info"><i>i</i><p><b>Catalogue refresh complete</b><span>3 metadata records updated</span></p></div><div className="notice good"><i>✓</i><p><b>Nightly index complete</b><span>28 documents · 1,483 chunks</span></p></div></div></article>
     </section>
-    <section className="quick-actions"><button onClick={() => onNavigate("analysis")}><span>GA</span><b>Run GIS analysis</b><small>Approved spatial operations</small></button><button onClick={() => onNavigate("parcels")}><span>PC</span><b>Find a parcel</b><small>Search synthetic records</small></button><button onClick={() => onNavigate("catalogue")}><span>NS</span><b>Search NSDI</b><small>Discover available datasets</small></button><button onClick={() => { notify("New parcel assessment draft created"); onNavigate("reports"); }}><span>RP</span><b>Create report</b><small>Traceable decision support</small></button></section>
+    <section className="quick-actions"><button onClick={() => onNavigate("analysis")}><span><Workflow size={16} aria-hidden /></span><b>Run GIS analysis</b><small>Approved spatial operations</small></button><button onClick={() => onNavigate("parcels")}><span><LandPlot size={16} aria-hidden /></span><b>Find a parcel</b><small>Search synthetic records</small></button><button onClick={() => onNavigate("catalogue")}><span><Database size={16} aria-hidden /></span><b>Search NSDI</b><small>Discover available datasets</small></button><button onClick={() => { notify("New parcel assessment draft created"); onNavigate("reports"); }}><span><FileText size={16} aria-hidden /></span><b>Create report</b><small>Traceable decision support</small></button></section>
   </div>;
 }
 
@@ -261,16 +279,16 @@ function AssistantPage({ onOpenMap, notify }: { onOpenMap: () => void; notify: (
 
 function ContextItem({ mark, title, meta, status }: { mark: string; title: string; meta: string; status: string }) { return <div className="context-item"><span>{mark}</span><p><b>{title}</b><small>{meta}</small></p><em>{status}</em></div>; }
 
-function ParcelMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers }: { compact?: boolean; selected?: Parcel; onSelect?: (p: Parcel) => void; onClearSelection?: () => void; onNotify?: (message: string) => void; visibleLayers?: Partial<MapLayerVisibility> }) {
-  return <OpenStreetMap compact={compact} selected={selected} onSelect={onSelect} onClearSelection={onClearSelection} onNotify={onNotify} visibleLayers={visibleLayers} />;
+function ParcelMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis }: { compact?: boolean; selected?: Parcel; onSelect?: (p: Parcel) => void; onClearSelection?: () => void; onNotify?: (message: string) => void; visibleLayers?: Partial<MapLayerVisibility>; highlightedUpis?: string[] }) {
+  return <OpenStreetMap compact={compact} selected={selected} onSelect={onSelect} onClearSelection={onClearSelection} onNotify={onNotify} visibleLayers={visibleLayers} highlightedUpis={highlightedUpis} />;
 }
 
-function MapPage({ notify }: { notify: (s: string) => void }) {
-  const [selected, setSelected] = useState<Parcel | undefined>(parcels[0]);
+function MapPage({ notify, highlightedUpis }: { notify: (s: string) => void; highlightedUpis: string[] }) {
+  const [selected, setSelected] = useState<Parcel | undefined>(() => parcels.find((parcel) => highlightedUpis.includes(parcel.upi)) ?? parcels[0]);
   const [layers, setLayers] = useState<MapLayerVisibility>({ parcels: true, osmPlaces: false, zoning: false, boundaries: true });
 
-  return <div className="map-workspace"><div className="map-main"><ParcelMap selected={selected} onSelect={setSelected} onClearSelection={() => setSelected(undefined)} onNotify={notify} visibleLayers={layers} /></div>
-    <aside className="map-side"><div className="map-tabs"><button className="active">Layers</button><button>Open data</button></div><div className="open-map-note"><span>OS</span><p><b>Open mapping stack</b><small>OSM streets · OpenTopoMap · NASA Earth imagery</small></p></div><div className="layer-group"><h3>Open data <span>−</span></h3><LayerToggle label="Live OSM places" sub="Schools · health · government · markets" checked={layers.osmPlaces} onChange={() => setLayers({ ...layers, osmPlaces: !layers.osmPlaces })} /></div><div className="layer-group"><h3>NLA demo context <span>−</span></h3><LayerToggle label="Prototype coverage" sub="Kigali demonstration boundary" checked={layers.boundaries} onChange={() => setLayers({ ...layers, boundaries: !layers.boundaries })} /><LayerToggle label="Synthetic cadastral parcels" sub="128 non-sensitive demonstration records" checked={layers.parcels} onChange={() => setLayers({ ...layers, parcels: !layers.parcels })} /><LayerToggle label="Demo planning zone" sub="Illustrative classification only" checked={layers.zoning} onChange={() => setLayers({ ...layers, zoning: !layers.zoning })} /></div>
+  return <div className="map-workspace"><div className="map-main"><ParcelMap selected={selected} onSelect={setSelected} onClearSelection={() => setSelected(undefined)} onNotify={notify} visibleLayers={layers} highlightedUpis={highlightedUpis} /></div>
+    <aside className="map-side"><div className="map-tabs"><button className="active">Layers</button><button>Open data</button></div>{highlightedUpis.length > 0 && <div className="analysis-map-note"><Workflow size={16} aria-hidden /><p><b>Analysis result</b><small>{highlightedUpis.length} matched parcels highlighted in orange</small></p></div>}<div className="open-map-note"><span>OS</span><p><b>Open mapping stack</b><small>OSM streets · OpenTopoMap · NASA Earth imagery</small></p></div><div className="layer-group"><h3>Open data <span>−</span></h3><LayerToggle label="Live OSM places" sub="Schools · health · government · markets" checked={layers.osmPlaces} onChange={() => setLayers({ ...layers, osmPlaces: !layers.osmPlaces })} /></div><div className="layer-group"><h3>NLA demo context <span>−</span></h3><LayerToggle label="Prototype coverage" sub="Kigali demonstration boundary" checked={layers.boundaries} onChange={() => setLayers({ ...layers, boundaries: !layers.boundaries })} /><LayerToggle label="Synthetic cadastral parcels" sub="128 non-sensitive demonstration records" checked={layers.parcels} onChange={() => setLayers({ ...layers, parcels: !layers.parcels })} /><LayerToggle label="Demo planning zone" sub="Illustrative classification only" checked={layers.zoning} onChange={() => setLayers({ ...layers, zoning: !layers.zoning })} /></div>
       {selected && <div className="selected-card"><div className="selected-head"><span>Selected parcel</span><button onClick={() => setSelected(undefined)}>×</button></div><h3>{selected.upi}</h3><dl><div><dt>District</dt><dd>{selected.district}</dd></div><div><dt>Sector</dt><dd>{selected.sector}</dd></div><div><dt>Area</dt><dd>{selected.area.toLocaleString()} m²</dd></div><div><dt>Land use</dt><dd>{selected.landUse}</dd></div><div><dt>Zoning</dt><dd>{selected.zoning}</dd></div><div><dt>Status</dt><dd><i />{selected.status}</dd></div></dl><button className="primary-button full" onClick={() => notify(`Parcel ${selected.upi} added to the analysis workspace`)}>Analyse parcel</button></div>}
     </aside></div>;
 }
@@ -284,11 +302,90 @@ function ParcelsPage({ onAnalyse, notify }: { onAnalyse: () => void; notify: (s:
     <aside className="parcel-inspector">{selected ? <><div className="inspector-map"><ParcelMap compact selected={selected} /></div><div className="inspector-content"><span className="eyebrow">Parcel intelligence</span><h2>{selected.upi}</h2><p>{selected.sector}, {selected.district}</p><dl><div><dt>Area</dt><dd>{selected.area.toLocaleString()} m²</dd></div><div><dt>Land use</dt><dd>{selected.landUse}</dd></div><div><dt>Zoning</dt><dd>{selected.zoning}</dd></div><div><dt>Nearest road</dt><dd>{selected.roadDistance} m</dd></div><div><dt>Wetland distance</dt><dd>{selected.wetlandDistance} m</dd></div><div><dt>Registration</dt><dd>{selected.status}</dd></div></dl><div className="assessment-note"><b>AI observation</b><p>No major spatial conflict was detected using currently available prototype layers.</p></div><button className="primary-button full" onClick={onAnalyse}>Analyse with GeoAI</button><button className="secondary-button full" onClick={() => notify("Parcel report draft created")}>Generate assessment report</button></div></> : <div className="empty-inspector"><span>PC</span><h3>Select a parcel</h3><p>Choose a row to view land information and spatial relationships.</p></div>}</aside></div>;
 }
 
-function AnalysisPage({ onOpenMap, notify }: { onOpenMap: () => void; notify: (s: string) => void }) {
-  const [operation, setOperation] = useState("Road Impact Analysis"); const [running, setRunning] = useState(false); const [complete, setComplete] = useState(false);
-  const run = () => { setRunning(true); setComplete(false); window.setTimeout(() => { setRunning(false); setComplete(true); }, 900); };
-  return <div className="analysis-layout"><aside className="analysis-menu"><p>Analysis operations</p>{["Buffer Analysis", "Intersection Analysis", "Proximity Analysis", "Parcel Area Analysis", "Land Use Analysis", "Zoning Analysis", "Wetland Impact Analysis", "Road Impact Analysis"].map((item) => <button key={item} className={operation === item ? "active" : ""} onClick={() => { setOperation(item); setComplete(false); }}><span>{item.split(" ").map((w) => w[0]).join("").slice(0, 2)}</span>{item}</button>)}</aside><section className="analysis-content"><div className="panel analysis-form"><div className="operation-title"><span>GA</span><div><p>Approved PostGIS workflow</p><h2>{operation}</h2></div><em>ST_DWithin</em></div><div className="form-grid"><label>Select road<select><option>KN 5 Road</option><option>KK 15 Road</option><option>NR 4 Corridor</option></select></label><label>Buffer distance<div className="input-suffix"><input defaultValue="100" /><span>metres</span></div></label><label>Land use<select><option>Agriculture</option><option>All categories</option><option>Residential</option></select></label><label>District<select><option>Gasabo</option><option>All districts</option><option>Kicukiro</option></select></label></div><div className="safe-query"><span>◆</span><p><b>Controlled spatial operation</b><small>GeoAI will call the approved <code>findParcelsWithinDistance()</code> function. It cannot generate or run unrestricted SQL.</small></p></div><button className="primary-button run-button" onClick={run} disabled={running}>{running ? "Running approved analysis…" : "Run analysis"}</button></div>
-      {(complete || !running) && <div className={`analysis-results ${complete ? "fresh" : ""}`}><div className="results-head"><div><span>Completed · synthetic data</span><h2>37 parcels affected</h2><p>Parcels within 100 metres of KN 5 Road in Gasabo</p></div><div><button onClick={onOpenMap}>View on map</button><button onClick={() => notify("CSV export prepared")}>Export CSV</button></div></div><div className="impact-grid"><div><span>Total area affected</span><b>18.7 ha</b><small>Across 37 parcels</small></div><div className="high"><span>High impact</span><b>8</b><small>More than 50% overlap</small></div><div className="medium"><span>Medium impact</span><b>13</b><small>20–50% overlap</small></div><div className="low"><span>Low impact</span><b>16</b><small>Less than 20% overlap</small></div></div><div className="result-map-row"><div className="result-map"><ParcelMap compact /></div><div className="ai-summary"><span>✦ GeoAI summary</span><p>The road corridor affects 37 synthetic parcels, with the highest concentration in Remera Sector. Agricultural parcels account for 56.8% of the affected area.</p><div><b>Recommended next action</b><p>An authorized GIS or Land Use officer should verify the selected alignment and parcel boundaries before any administrative use.</p></div><button onClick={() => notify("AI summary added to report draft")}>Generate PDF report →</button></div></div></div>}
+type AnalysisOperation = {
+  name: string;
+  icon: LucideIcon;
+  functionName: string;
+  parameterLabel: string;
+  parameterUnit: string;
+  defaultValue: number;
+  source: "road" | "wetland" | "area" | "attribute" | "intersection";
+};
+
+const ANALYSIS_OPERATIONS: AnalysisOperation[] = [
+  { name: "Buffer Analysis", icon: CircleDotDashed, functionName: "ST_Buffer", parameterLabel: "Buffer distance", parameterUnit: "metres", defaultValue: 100, source: "road" },
+  { name: "Intersection Analysis", icon: Combine, functionName: "ST_Intersects", parameterLabel: "Search tolerance", parameterUnit: "metres", defaultValue: 120, source: "intersection" },
+  { name: "Proximity Analysis", icon: Radar, functionName: "ST_DWithin", parameterLabel: "Maximum distance", parameterUnit: "metres", defaultValue: 150, source: "road" },
+  { name: "Parcel Area Analysis", icon: ScanLine, functionName: "ST_Area", parameterLabel: "Minimum parcel area", parameterUnit: "m²", defaultValue: 3000, source: "area" },
+  { name: "Land Use Analysis", icon: Tags, functionName: "Attribute_Filter", parameterLabel: "Minimum parcel area", parameterUnit: "m²", defaultValue: 0, source: "attribute" },
+  { name: "Zoning Analysis", icon: LandPlot, functionName: "Zone_Filter", parameterLabel: "Minimum parcel area", parameterUnit: "m²", defaultValue: 0, source: "attribute" },
+  { name: "Wetland Impact Analysis", icon: Waves, functionName: "ST_DWithin", parameterLabel: "Wetland distance", parameterUnit: "metres", defaultValue: 100, source: "wetland" },
+  { name: "Road Impact Analysis", icon: Route, functionName: "ST_DWithin", parameterLabel: "Road buffer", parameterUnit: "metres", defaultValue: 100, source: "road" },
+];
+
+function downloadAnalysisCsv(matches: Parcel[], operation: string) {
+  const rows = [["UPI", "District", "Sector", "Area_m2", "Land_use", "Zoning", "Road_distance_m", "Wetland_distance_m"], ...matches.map((parcel) => [parcel.upi, parcel.district, parcel.sector, parcel.area, parcel.landUse, parcel.zoning, parcel.roadDistance, parcel.wetlandDistance])];
+  const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${operation.toLowerCase().replaceAll(" ", "-")}-demo.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function AnalysisPage({ onOpenMap, notify }: { onOpenMap: (matches: Parcel[]) => void; notify: (s: string) => void }) {
+  const [operation, setOperation] = useState(ANALYSIS_OPERATIONS[7]);
+  const [running, setRunning] = useState(false);
+  const [complete, setComplete] = useState(false);
+  const [road, setRoad] = useState("KN 5 Road");
+  const [parameter, setParameter] = useState(operation.defaultValue);
+  const [landUse, setLandUse] = useState<"All categories" | Parcel["landUse"]>("All categories");
+  const [district, setDistrict] = useState("All districts");
+  const [zoning, setZoning] = useState("All zones");
+  const [matches, setMatches] = useState<Parcel[]>([]);
+
+  function chooseOperation(next: AnalysisOperation) {
+    setOperation(next);
+    setParameter(next.defaultValue);
+    setComplete(false);
+    setMatches([]);
+  }
+
+  function run(event: FormEvent) {
+    event.preventDefault();
+    setRunning(true);
+    setComplete(false);
+    const threshold = Math.max(0, Number(parameter) || 0);
+    const scoped = parcels.filter((parcel) => (district === "All districts" || parcel.district === district) && (landUse === "All categories" || parcel.landUse === landUse) && (zoning === "All zones" || parcel.zoning === zoning));
+    let calculated: Parcel[];
+    const roadOffset = road === "KN 5 Road" ? 0 : road === "KK 15 Road" ? 25 : 55;
+    if (operation.source === "road") calculated = scoped.filter((parcel) => parcel.roadDistance + roadOffset <= threshold);
+    else if (operation.source === "wetland") calculated = scoped.filter((parcel) => parcel.wetlandDistance <= threshold);
+    else if (operation.source === "intersection") calculated = scoped.filter((parcel) => parcel.roadDistance <= threshold && parcel.wetlandDistance <= threshold);
+    else if (operation.source === "area") calculated = scoped.filter((parcel) => parcel.area >= threshold);
+    else calculated = scoped.filter((parcel) => parcel.area >= threshold);
+    window.setTimeout(() => {
+      setMatches(calculated);
+      setRunning(false);
+      setComplete(true);
+      notify(`${operation.name} completed with ${calculated.length} matching parcels`);
+    }, 650);
+  }
+
+  const distanceFor = (parcel: Parcel) => operation.source === "wetland" ? parcel.wetlandDistance : operation.source === "intersection" ? Math.max(parcel.roadDistance, parcel.wetlandDistance) : parcel.roadDistance;
+  const high = matches.filter((parcel) => operation.source === "area" || operation.source === "attribute" ? parcel.area >= 6000 : distanceFor(parcel) <= Math.max(1, parameter * .34)).length;
+  const medium = matches.filter((parcel) => operation.source === "area" || operation.source === "attribute" ? parcel.area >= 3000 && parcel.area < 6000 : distanceFor(parcel) > parameter * .34 && distanceFor(parcel) <= parameter * .67).length;
+  const low = Math.max(0, matches.length - high - medium);
+  const totalArea = matches.reduce((sum, parcel) => sum + parcel.area, 0);
+  const dominantSector = matches.length ? [...new Set(matches.map((parcel) => parcel.sector))].sort((a, b) => matches.filter((parcel) => parcel.sector === b).length - matches.filter((parcel) => parcel.sector === a).length)[0] : "none";
+  const context = operation.source === "road" ? `${operation.parameterLabel.toLowerCase()} ${parameter} ${operation.parameterUnit} from ${road}` : operation.source === "wetland" ? `within ${parameter} metres of the synthetic wetland reference` : operation.source === "intersection" ? `within ${parameter} metres of both road and wetland references` : operation.source === "area" ? `with area of at least ${parameter.toLocaleString()} m²` : `matching the selected land and zoning attributes`;
+  const OperationIcon = operation.icon;
+
+  return <div className="analysis-layout"><aside className="analysis-menu"><p>Analysis operations</p>{ANALYSIS_OPERATIONS.map((item) => { const Icon = item.icon; return <button key={item.name} className={operation.name === item.name ? "active" : ""} onClick={() => chooseOperation(item)}><span><Icon size={14} strokeWidth={1.9} aria-hidden /></span>{item.name}</button>; })}</aside><section className="analysis-content"><form className="panel analysis-form" onSubmit={run}><div className="operation-title"><span><OperationIcon size={19} aria-hidden /></span><div><p>Controlled GIS demo engine</p><h2>{operation.name}</h2></div><em>{operation.functionName}</em></div><div className="form-grid">{(operation.source === "road" || operation.source === "intersection") && <label>Select road<select value={road} onChange={(event) => setRoad(event.target.value)}><option>KN 5 Road</option><option>KK 15 Road</option><option>NR 4 Corridor</option></select></label>}<label>{operation.parameterLabel}<div className="input-suffix"><input aria-label={operation.parameterLabel} type="number" min="0" max={operation.source === "area" || operation.source === "attribute" ? 10000 : 2500} value={parameter} onChange={(event) => setParameter(Number(event.target.value))} /><span>{operation.parameterUnit}</span></div></label><label>Land use<select value={landUse} onChange={(event) => setLandUse(event.target.value as typeof landUse)}><option>All categories</option><option>Agriculture</option><option>Residential</option><option>Commercial</option><option>Mixed Use</option><option>Conservation</option></select></label><label>District<select value={district} onChange={(event) => setDistrict(event.target.value)}><option>All districts</option><option>Gasabo</option><option>Kicukiro</option><option>Nyarugenge</option><option>Musanze</option><option>Huye</option><option>Bugesera</option></select></label><label>Zoning<select value={zoning} onChange={(event) => setZoning(event.target.value)}><option>All zones</option><option>R1</option><option>R2</option><option>R3</option><option>C1</option><option>AG</option><option>OS</option></select></label></div><div className="safe-query"><span><ShieldCheck size={17} aria-hidden /></span><p><b>Controlled spatial operation</b><small>The demo runs deterministic parcel filters equivalent to the approved <code>{operation.functionName}</code> workflow. It does not generate or execute unrestricted SQL.</small></p></div><button className="primary-button run-button" type="submit" disabled={running}>{running ? <><LoaderCircle className="spin" size={16} aria-hidden />Running analysis…</> : <><Play size={16} fill="currentColor" aria-hidden />Run analysis</>}</button></form>
+      {!complete && !running && <div className="analysis-empty"><span><Boxes size={29} aria-hidden /></span><h2>Configure and run the workflow</h2><p>Results will be calculated from the 128 synthetic parcel records using your selected spatial and attribute filters.</p><small>No result is shown until the analysis runs.</small></div>}
+      {running && <div className="analysis-empty running"><span><LoaderCircle className="spin" size={29} aria-hidden /></span><h2>Processing spatial filters</h2><p>Applying {operation.functionName} logic to the selected demonstration dataset.</p></div>}
+      {complete && <div className="analysis-results fresh"><div className="results-head"><div><span>Completed · synthetic data</span><h2>{matches.length} {matches.length === 1 ? "parcel" : "parcels"} matched</h2><p>{operation.name}: {context} in {district === "All districts" ? "all demonstration districts" : district}.</p></div><div><button onClick={() => onOpenMap(matches)} disabled={!matches.length}><MapIcon size={14} aria-hidden />View map</button><button onClick={() => { downloadAnalysisCsv(matches, operation.name); notify("Analysis CSV downloaded"); }} disabled={!matches.length}><Download size={14} aria-hidden />Export CSV</button></div></div><div className="impact-grid"><div><span>Total matched area</span><b>{(totalArea / 10_000).toFixed(2)} ha</b><small>Across {matches.length} parcels</small></div><div className="high"><span>High priority</span><b>{high}</b><small>Closest or largest matches</small></div><div className="medium"><span>Medium priority</span><b>{medium}</b><small>Middle analysis band</small></div><div className="low"><span>Low priority</span><b>{low}</b><small>Remaining matches</small></div></div><div className="result-map-row"><div className="result-map"><ParcelMap compact selected={matches[0]} highlightedUpis={matches.map((parcel) => parcel.upi)} /><div className="result-upis">{matches.slice(0, 4).map((parcel) => <span key={parcel.upi}>{parcel.upi}</span>)}{matches.length > 4 && <em>+{matches.length - 4} more</em>}</div></div><div className="ai-summary"><span><Sparkles size={14} aria-hidden />NLA GeoAI summary</span><p>{matches.length ? `${matches.length} synthetic parcels match this ${operation.name.toLowerCase()}, covering ${(totalArea / 10_000).toFixed(2)} hectares. The largest concentration is in ${dominantSector} Sector.` : `No synthetic parcels matched the current ${operation.name.toLowerCase()} settings. Increase the distance or broaden the attribute filters and run it again.`}</p><div><b>Recommended next action</b><p>An authorized GIS or Land Use officer should verify source geometry and current official records before administrative use.</p></div><button disabled={!matches.length} onClick={() => { downloadSimplePdf(`${operation.name} Report`, `NLA-GEO-${Date.now().toString().slice(-6)}`); notify("GIS analysis PDF downloaded"); }}><FileDown size={14} aria-hidden />Generate PDF report</button></div></div></div>}
     </section></div>;
 }
 

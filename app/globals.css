@@ -575,3 +575,83 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .osm-map-status { bottom: 27px; }
   .support-launcher { min-width: 54px; }
 }
+
+/* Professional iconography, functional analysis, and open 3D mapping */
+.global-search > span, .mobile-search-button { transform: none; }
+.menu-button, .mobile-search-button, .icon-button { align-items: center; justify-content: center; }
+.menu-button, .mobile-search-button { place-items: center; }
+.icon-button { display: grid; place-items: center; }
+.icon-button:before { display: none; }
+.nav-mark { border: 0; background: rgba(255,255,255,.1); }
+.nav-group button.active .nav-mark { color: var(--nla-yellow); background: rgba(255,255,255,.13); }
+.mobile-bottom-nav span { border: 0; }
+.quick-actions span { border: 0; background: rgba(255,255,255,.1); }
+.primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.primary-button svg { flex: 0 0 auto; color: var(--nla-yellow); }
+.support-actions span svg, .support-launcher > span svg { display: block; }
+
+.analysis-empty { min-height: 410px; display: grid; place-items: center; align-content: center; gap: 8px; padding: 34px; border: 1px dashed #b9ced5; border-radius: 8px; color: var(--muted); background: linear-gradient(145deg, #f8fbfc, #eef6f8); text-align: center; }
+.analysis-empty > span { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 16px; color: var(--nla-blue-deep); background: white; box-shadow: 0 10px 28px rgba(8,127,174,.12); }
+.analysis-empty h2 { margin: 7px 0 0; color: var(--ink); font-family: Georgia, serif; font-size: 20px; }
+.analysis-empty p { max-width: 430px; margin: 0; font-size: 9px; line-height: 1.6; }
+.analysis-empty small { color: #83949a; font-size: 8px; }
+.analysis-empty.running > span { color: var(--nla-green); }
+.spin { animation: icon-spin .9s linear infinite; }
+@keyframes icon-spin { to { transform: rotate(360deg); } }
+.operation-title > span { border-radius: 10px; }
+.operation-title > span svg { display: block; }
+.analysis-menu button span { flex: 0 0 auto; border-color: rgba(255,255,255,.22); }
+.analysis-menu button.active span { color: var(--nla-yellow); background: rgba(255,255,255,.08); }
+.safe-query > span { flex: 0 0 auto; display: grid; place-items: center; }
+.run-button { gap: 8px; }
+.results-head > div:last-child { display: flex; gap: 6px; }
+.results-head button, .ai-summary > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.results-head button:disabled, .ai-summary > button:disabled { opacity: .45; cursor: not-allowed; }
+.result-map { position: relative; min-width: 0; }
+.result-upis { position: absolute; z-index: 600; left: 9px; right: 9px; bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px; pointer-events: none; }
+.result-upis span, .result-upis em { padding: 4px 6px; border-radius: 5px; color: #274e58; background: rgba(255,255,255,.94); box-shadow: 0 2px 8px rgba(20,72,91,.15); font-family: var(--font-plex-mono); font-size: 6px; font-style: normal; }
+.ai-summary > span { display: flex; align-items: center; gap: 6px; }
+.ai-summary > button { min-height: 34px; }
+
+.map-layer-hidden { visibility: hidden; pointer-events: none; }
+.three-d-map { position: absolute; z-index: 800; inset: 0; overflow: hidden; background: #dce8eb; }
+.three-d-map-canvas { width: 100%; height: 100%; }
+.three-d-map-loading { position: absolute; z-index: 5; inset: 0; display: grid; place-items: center; align-content: center; gap: 9px; color: var(--nla-blue-deep); background: linear-gradient(145deg, #e7f2f5, #cadfe5); font-size: 10px; font-weight: 800; }
+.three-d-map-loading.error { color: #914a42; }
+.three-d-map-badge { position: absolute; z-index: 7; left: 14px; bottom: 34px; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid rgba(255,255,255,.36); border-radius: 8px; color: white; background: rgba(9,52,66,.82); box-shadow: 0 6px 18px rgba(7,35,45,.24); backdrop-filter: blur(10px); }
+.three-d-map-badge > svg { color: var(--nla-yellow); }
+.three-d-map-badge b, .three-d-map-badge small { display: block; }
+.three-d-map-badge b { font-size: 8px; }
+.three-d-map-badge small { margin-top: 2px; color: #cce8f1; font-size: 6px; }
+.map-view-switcher { position: absolute; z-index: 1100; right: 14px; top: 14px; height: 44px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px; padding: 4px; border: 1px solid #aac2ca; border-radius: 9px; background: rgba(255,255,255,.97); box-shadow: 0 5px 18px rgba(20,72,91,.18); }
+.map-view-switcher button { min-width: 76px; display: flex; align-items: center; justify-content: center; gap: 5px; border: 0; border-radius: 6px; color: #526b74; background: transparent; font-size: 8px; font-weight: 800; }
+.map-view-switcher button.active { color: white; background: var(--nla-blue-deep); }
+.osm-basemap-switcher { top: 66px; }
+.osm-basemap-switcher button { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.osm-map-tools { top: 118px; }
+.osm-refresh-places { top: 272px; }
+.osm-map-tools button { display: grid; place-items: center; }
+.osm-map-tools svg { display: block; }
+.view-3d .map-view-switcher { border-color: rgba(255,255,255,.5); }
+.view-3d:fullscreen .three-d-map { min-height: 100vh; }
+.analysis-map-note { margin: 12px 0 0; padding: 10px; display: flex; align-items: center; gap: 9px; border: 1px solid rgba(231,120,23,.3); border-radius: 7px; color: #8b480b; background: #fff5e9; }
+.analysis-map-note > svg { flex: 0 0 auto; }
+.analysis-map-note p { margin: 0; }
+.analysis-map-note b, .analysis-map-note small { display: block; }
+.analysis-map-note b { font-size: 8px; }
+.analysis-map-note small { margin-top: 3px; color: #8d6542; font-size: 7px; line-height: 1.4; }
+
+@media (max-width: 640px) {
+  .analysis-empty { min-height: 300px; padding: 26px 18px; }
+  .analysis-content { gap: 9px; }
+  .result-upis { display: none; }
+  .map-view-switcher { left: 10px; right: 10px; top: 62px; }
+  .map-view-switcher button { min-width: 0; }
+  .osm-basemap-switcher { top: 114px; }
+  .osm-map-tools { top: 166px; }
+  .osm-refresh-places { top: 166px; }
+  .osm-map-shell .leaflet-control-zoom { margin-top: 164px; }
+  .three-d-map-badge { left: 10px; right: 10px; bottom: 34px; }
+  .three-d-map .maplibregl-ctrl-bottom-right { bottom: 64px; }
+  .three-d-map .maplibregl-ctrl-bottom-left { bottom: 70px; }
+}
