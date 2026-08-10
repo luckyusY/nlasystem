@@ -1,11 +1,21 @@
 import type { Metadata } from "next";
-import { DM_Sans, IBM_Plex_Mono } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Serif, Manrope } from "next/font/google";
+import SmoothScroll from "@/components/smooth-scroll";
 import "leaflet/dist/leaflet.css";
+import "lenis/dist/lenis.css";
 import "maplibre-gl/dist/maplibre-gl.css";
+import "swiper/css";
+import "swiper/css/pagination";
 import "./globals.css";
 
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
+const manrope = Manrope({
+  variable: "--font-manrope",
+  subsets: ["latin"],
+});
+
+const plexSerif = IBM_Plex_Serif({
+  variable: "--font-plex-serif",
+  weight: ["500", "600"],
   subsets: ["latin"],
 });
 
@@ -28,5 +38,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en" className={`${dmSans.variable} ${plexMono.variable}`}><body>{children}</body></html>;
+  return <html lang="en" className={`${manrope.variable} ${plexSerif.variable} ${plexMono.variable}`}><body><SmoothScroll />{children}</body></html>;
 }

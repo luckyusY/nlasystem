@@ -2,7 +2,10 @@
 
 import { FormEvent, useState } from "react";
 import Image from "next/image";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { BarChart3, Bell, Bot, BookOpen, Boxes, CircleDotDashed, Combine, Database, Download, FileDown, FileText, HeartPulse, Home, LandPlot, LoaderCircle, Map as MapIcon, Menu, MoreHorizontal, Play, Radar, RadioTower, Route, Satellite, ScanLine, ScrollText, Search, Settings, ShieldCheck, Sparkles, Tags, Waves, Workflow, type LucideIcon } from "lucide-react";
+import { A11y, Keyboard, Pagination } from "swiper/modules";
+import { Swiper, SwiperSlide } from "swiper/react";
 import OpenStreetMap, { type MapLayerVisibility } from "@/components/open-street-map";
 import { auditEvents, corsStations, datasets, documents, parcels, reports, roles, type Parcel } from "@/lib/data";
 
@@ -85,6 +88,7 @@ function getAssistantResponse(question: string): Message {
 }
 
 export default function GeoAIApp() {
+  const reduceMotion = useReducedMotion();
   const [page, setPage] = useState<PageKey>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [noticeOpen, setNoticeOpen] = useState(false);
@@ -116,9 +120,9 @@ export default function GeoAIApp() {
             <div className="nav-group" key={group.label}>
               <p>{group.label}</p>
               {group.items.map((item) => { const Icon = PAGE_ICONS[item.key]; return (
-                <button key={item.key} className={page === item.key ? "active" : ""} onClick={() => navigate(item.key)}>
-                  <span className="nav-mark"><Icon size={14} strokeWidth={1.9} aria-hidden /></span>{item.label}{page === item.key && <i />}
-                </button>
+                <motion.button key={item.key} className={page === item.key ? "active" : ""} onClick={() => navigate(item.key)} whileHover={reduceMotion ? undefined : { x: 4 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
+                  <span className="nav-mark"><Icon size={16} strokeWidth={1.9} aria-hidden /></span>{item.label}{page === item.key && <motion.i layoutId="active-navigation-rail" />}
+                </motion.button>
               ); })}
             </div>
           ))}
@@ -130,7 +134,7 @@ export default function GeoAIApp() {
         </div>
       </aside>
 
-      {sidebarOpen && <button className="scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation overlay" />}
+      <AnimatePresence>{sidebarOpen && <motion.button className="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} aria-label="Close navigation overlay" />}</AnimatePresence>
 
       <main className="main-area">
         <header className="topbar">
@@ -143,24 +147,28 @@ export default function GeoAIApp() {
             <button className="icon-button" onClick={() => setNoticeOpen(!noticeOpen)} aria-label="Notifications"><Bell size={17} aria-hidden /><i>3</i></button>
             <div className="header-user"><span>AU</span><div><b>Aline Uwase</b><small>GIS Department · GIS Officer</small></div></div>
           </div>
-          {noticeOpen && <div className="notification-popover"><strong>Notifications</strong><p><b>Road layer refreshed</b><span>NSDI metadata · 8 min ago</span></p><p><b>MUSN latency warning</b><span>CORS monitoring · 24 min ago</span></p><p><b>Report ready for review</b><span>NLA-GEO-2026-084 · 1 hr ago</span></p></div>}
+          <AnimatePresence>{noticeOpen && <motion.div className="notification-popover" initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8, rotateX: -7 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, rotateX: -5 }} transition={{ duration: 0.18 }}><strong>Notifications</strong><p><b>Road layer refreshed</b><span>NSDI metadata · 8 min ago</span></p><p><b>MUSN latency warning</b><span>CORS monitoring · 24 min ago</span></p><p><b>Report ready for review</b><span>NLA-GEO-2026-084 · 1 hr ago</span></p></motion.div>}</AnimatePresence>
         </header>
 
         <div className="content-wrap">
-          <PageIntro page={page} onAsk={() => navigate("assistant")} />
-          {page === "dashboard" && <Dashboard onNavigate={navigate} notify={notify} />}
-          {page === "assistant" && <AssistantPage onOpenMap={() => navigate("map")} notify={notify} />}
-          {page === "map" && <MapPage notify={notify} highlightedUpis={analysisMatches} />}
-          {page === "parcels" && <ParcelsPage onAnalyse={() => navigate("assistant")} notify={notify} />}
-          {page === "analysis" && <AnalysisPage onOpenMap={(matches) => { setAnalysisMatches(matches.map((parcel) => parcel.upi)); navigate("map"); }} notify={notify} />}
-          {page === "catalogue" && <CataloguePage notify={notify} />}
-          {page === "knowledge" && <KnowledgePage notify={notify} />}
-          {page === "reports" && <ReportsPage notify={notify} />}
-          {page === "cors" && <CorsPage />}
-          {page === "satellite" && <SatellitePage notify={notify} />}
-          {page === "audit" && <AuditPage />}
-          {page === "admin" && <AdminPage notify={notify} />}
-          {page === "health" && <HealthPage />}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div className="page-stage" key={page} initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 16, rotateX: -1.5 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }} transition={{ duration: reduceMotion ? 0.08 : 0.28, ease: [0.22, 1, 0.36, 1] }}>
+              <PageIntro page={page} onAsk={() => navigate("assistant")} />
+              {page === "dashboard" && <Dashboard onNavigate={navigate} notify={notify} />}
+              {page === "assistant" && <AssistantPage onOpenMap={() => navigate("map")} notify={notify} />}
+              {page === "map" && <MapPage notify={notify} highlightedUpis={analysisMatches} />}
+              {page === "parcels" && <ParcelsPage onAnalyse={() => navigate("assistant")} notify={notify} />}
+              {page === "analysis" && <AnalysisPage onOpenMap={(matches) => { setAnalysisMatches(matches.map((parcel) => parcel.upi)); navigate("map"); }} notify={notify} />}
+              {page === "catalogue" && <CataloguePage notify={notify} />}
+              {page === "knowledge" && <KnowledgePage notify={notify} />}
+              {page === "reports" && <ReportsPage notify={notify} />}
+              {page === "cors" && <CorsPage />}
+              {page === "satellite" && <SatellitePage notify={notify} />}
+              {page === "audit" && <AuditPage />}
+              {page === "admin" && <AdminPage notify={notify} />}
+              {page === "health" && <HealthPage />}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
@@ -171,12 +179,13 @@ export default function GeoAIApp() {
         <button onClick={() => setSidebarOpen(true)}><span><MoreHorizontal size={18} aria-hidden /></span><small>More</small></button>
       </nav>
       <GeoAISupportBubble onNavigate={navigate} />
-      {toast && <div className="toast"><span><ShieldCheck size={13} aria-hidden /></span>{toast}</div>}
+      <AnimatePresence>{toast && <motion.div className="toast" initial={{ opacity: 0, y: 14, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.98 }}><span><ShieldCheck size={15} aria-hidden /></span>{toast}</motion.div>}</AnimatePresence>
     </div>
   );
 }
 
 function GeoAISupportBubble({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
+  const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([
@@ -193,7 +202,7 @@ function GeoAISupportBubble({ onNavigate }: { onNavigate: (page: PageKey) => voi
   }
 
   return <div className={`support-widget ${open ? "open" : ""}`}>
-    {open && <section className="support-panel" role="dialog" aria-label="NLA GeoAI support" id="geoai-support-panel">
+    <AnimatePresence>{open && <motion.section className="support-panel" role="dialog" aria-label="NLA GeoAI support" id="geoai-support-panel" initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.96, rotateX: -4 }} animate={{ opacity: 1, y: 0, scale: 1, rotateX: 0 }} exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.97 }} transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
       <header><div><span><Sparkles size={15} aria-hidden /></span><p><b>NLA GeoAI Support</b><small><i /> Prototype assistant online</small></p></div><button onClick={() => setOpen(false)} aria-label="Close GeoAI support">×</button></header>
       <div className="support-messages" aria-live="polite">
         {messages.map((message) => <div className={`support-message ${message.role}`} key={message.id}><small>{message.role === "assistant" ? "NLA GEOAI" : "YOU"}</small><p>{message.text}</p>{message.warning && <em>Officer verification required</em>}</div>)}
@@ -201,8 +210,8 @@ function GeoAISupportBubble({ onNavigate }: { onNavigate: (page: PageKey) => voi
       <div className="support-actions"><button onClick={() => { setOpen(false); onNavigate("map"); }}><span><MapIcon size={15} aria-hidden /></span>Open street map</button><button onClick={() => ask("Calculate the area of parcel 1/02/03/04/0012.")}><span><LandPlot size={15} aria-hidden /></span>Check parcel 0012</button></div>
       <form onSubmit={(event) => { event.preventDefault(); ask(input); }}><input aria-label="Ask NLA GeoAI support" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask about parcels or land data…" /><button disabled={!input.trim()} aria-label="Send support question">↑</button></form>
       <button className="support-full-link" onClick={() => { setOpen(false); onNavigate("assistant"); }}>Open full GeoAI workspace →</button>
-    </section>}
-    <button className="support-launcher" aria-expanded={open} aria-controls="geoai-support-panel" onClick={() => setOpen((current) => !current)}><span><Sparkles size={17} aria-hidden /></span><b>{open ? "Close" : "Ask NLA GeoAI"}</b>{!open && <i>1</i>}</button>
+    </motion.section>}</AnimatePresence>
+    <motion.button className="support-launcher" aria-expanded={open} aria-controls="geoai-support-panel" onClick={() => setOpen((current) => !current)} whileHover={reduceMotion ? undefined : { y: -3, scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.97 }}><span><Sparkles size={18} aria-hidden /></span><b>{open ? "Close" : "Ask NLA GeoAI"}</b>{!open && <i>1</i>}</motion.button>
   </div>;
 }
 
@@ -212,19 +221,20 @@ function PageIntro({ page, onAsk }: { page: PageKey; onAsk: () => void }) {
 }
 
 function Dashboard({ onNavigate, notify }: { onNavigate: (p: PageKey) => void; notify: (s: string) => void }) {
+  const reduceMotion = useReducedMotion();
   const metrics = [
     ["128", "Synthetic parcels", "+12 this month", "PC"], ["6", "Districts covered", "Prototype scope", "DS"], ["12", "Available GIS layers", "11 online", "LY"], ["42", "NSDI datasets", "+3 indexed", "NS"],
     ["28", "Documents indexed", "1,483 chunks", "DC"], ["184", "AI queries today", "+18% vs. Friday", "AI"], ["31", "GIS analyses", "7 reports created", "GA"], ["Healthy", "System health", "7 of 8 services", "SH"],
   ];
   return <div className="dashboard-stack">
-    <section className="metric-grid">{metrics.map(([value, label, detail, mark]) => <article className="metric-card" key={label}><div className="metric-top"><span className="metric-mark">{mark}</span><i>↗</i></div><strong>{value}</strong><h3>{label}</h3><p>{detail}</p></article>)}</section>
+    <section className="metric-carousel" aria-label="Operational metrics"><Swiper className="metric-swiper" modules={[A11y, Keyboard, Pagination]} slidesPerView={1.18} spaceBetween={12} keyboard={{ enabled: true }} pagination={{ clickable: true }} breakpoints={{ 520: { slidesPerView: 2.15 }, 900: { slidesPerView: 3.15 }, 1260: { slidesPerView: 4 } }}>{metrics.map(([value, label, detail, mark]) => <SwiperSlide key={label}><motion.article className="metric-card" whileHover={reduceMotion ? undefined : { y: -6, rotateX: 2, rotateY: -1 }} transition={{ type: "spring", stiffness: 260, damping: 22 }}><div className="metric-top"><span className="metric-mark">{mark}</span><i>↗</i></div><strong>{value}</strong><h3>{label}</h3><p>{detail}</p></motion.article></SwiperSlide>)}</Swiper></section>
     <section className="dashboard-grid">
       <article className="panel span-2"><PanelHeader title="AI activity" detail="Queries by department · last 7 days" action="View audit" onAction={() => onNavigate("audit")} /><div className="chart-wrap"><div className="bar-chart" aria-label="AI queries chart">{[38, 55, 42, 68, 54, 78, 64, 86, 71, 92, 76, 98].map((n, i) => <div key={i}><span style={{ height: `${n}%` }} /><small>{["GIS", "REG", "LU", "NSDI", "MGT", "SVY"][i % 6]}</small></div>)}</div><div className="chart-legend"><p><i className="dot-green" /> GIS <b>34%</b></p><p><i className="dot-amber" /> Land Use <b>27%</b></p><p><i className="dot-blue" /> Other <b>39%</b></p></div></div></article>
       <article className="panel"><PanelHeader title="Parcel categories" detail="Synthetic dataset" /><div className="donut-row"><div className="donut"><div><b>128</b><span>parcels</span></div></div><div className="donut-legend"><p><i className="res" />Residential <b>39%</b></p><p><i className="agr" />Agriculture <b>28%</b></p><p><i className="mix" />Mixed use <b>18%</b></p><p><i className="oth" />Other <b>15%</b></p></div></div></article>
       <article className="panel span-2"><PanelHeader title="Recent GeoAI queries" detail="Answers grounded in connected prototype sources" action="Open assistant" onAction={() => onNavigate("assistant")} /><div className="activity-list"><Activity mark="AU" title="Agricultural parcels within 100 m of KN 5 Road" meta="Aline Uwase · GIS · 6 min ago" tag="37 parcels" /><Activity mark="JM" title="Documents discussing subdivision requirements" meta="Jean Mutesi · Registrar · 18 min ago" tag="2 sources" /><Activity mark="EN" title="Wetland overlap for parcel 1/02/03/04/0012" meta="Eric Niyonzima · Land Use · 34 min ago" tag="No overlap" /></div></article>
       <article className="panel"><PanelHeader title="System notices" detail="Items that may need attention" /><div className="notice-list"><div className="notice warning"><i>!</i><p><b>MUSN station latency</b><span>286 ms · increasing for 45 min</span></p></div><div className="notice info"><i>i</i><p><b>Catalogue refresh complete</b><span>3 metadata records updated</span></p></div><div className="notice good"><i>✓</i><p><b>Nightly index complete</b><span>28 documents · 1,483 chunks</span></p></div></div></article>
     </section>
-    <section className="quick-actions"><button onClick={() => onNavigate("analysis")}><span><Workflow size={16} aria-hidden /></span><b>Run GIS analysis</b><small>Approved spatial operations</small></button><button onClick={() => onNavigate("parcels")}><span><LandPlot size={16} aria-hidden /></span><b>Find a parcel</b><small>Search synthetic records</small></button><button onClick={() => onNavigate("catalogue")}><span><Database size={16} aria-hidden /></span><b>Search NSDI</b><small>Discover available datasets</small></button><button onClick={() => { notify("New parcel assessment draft created"); onNavigate("reports"); }}><span><FileText size={16} aria-hidden /></span><b>Create report</b><small>Traceable decision support</small></button></section>
+    <section className="quick-actions"><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("analysis")}><span><Workflow size={18} aria-hidden /></span><b>Run GIS analysis</b><small>Approved spatial operations</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("parcels")}><span><LandPlot size={18} aria-hidden /></span><b>Find a parcel</b><small>Search synthetic records</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("catalogue")}><span><Database size={18} aria-hidden /></span><b>Search NSDI</b><small>Discover available datasets</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => { notify("New parcel assessment draft created"); onNavigate("reports"); }}><span><FileText size={18} aria-hidden /></span><b>Create report</b><small>Traceable decision support</small></motion.button></section>
   </div>;
 }
 
