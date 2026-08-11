@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { BarChart3, Bell, Bot, BookOpen, Boxes, CheckCircle2, CircleDotDashed, Combine, Database, Download, Droplets, ExternalLink, FileDown, FileText, HeartPulse, LandPlot, Layers3, LoaderCircle, Map as MapIcon, Menu, MoreHorizontal, Orbit, Palette, Play, Radar, RadioTower, Route, Satellite, ScanLine, ScrollText, Search, Server, Settings, ShieldCheck, SlidersHorizontal, Sparkles, Tags, TreePine, Waves, Workflow, XCircle, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, Bot, BookOpen, Boxes, CheckCircle2, CircleDotDashed, Combine, Database, Download, Droplets, ExternalLink, FileDown, FileText, HeartPulse, LandPlot, Layers3, LoaderCircle, Map as MapIcon, Menu, MoreHorizontal, Newspaper, Orbit, Palette, Play, Radar, RadioTower, Route, Satellite, ScanLine, ScrollText, Search, Server, Settings, ShieldCheck, SlidersHorizontal, Sparkles, Tags, TreePine, Waves, Workflow, XCircle, type LucideIcon } from "lucide-react";
 import { A11y, Keyboard, Pagination } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import OpenStreetMap, { BASEMAPS, type BasemapKey, type MapLayerVisibility, type MapServiceStatus } from "@/components/open-street-map";
@@ -15,14 +15,16 @@ import SourceMetadataDialog from "@/components/source-metadata-dialog";
 import DocumentLinkHealth from "@/components/document-link-health";
 import ProvenancePolicyPage from "@/components/provenance-policy-page";
 import RuntimeBoundary from "@/components/runtime-boundary";
+import GovernmentUpdatesPage from "@/components/government-updates-page";
 import { auditEvents, corsStations, datasets, parcels, reports, roles, type Parcel } from "@/lib/data";
 import { analyzeParcels, type SpatialMetric } from "@/lib/geospatial-engine";
 import { inferLocalGeoIntent, warmLocalGeoAI, type LocalGeoAIResult } from "@/lib/local-geoai";
 import { DOCUMENT_CATEGORIES, OFFICIAL_DOCUMENTS, searchOfficialDocuments } from "@/lib/official-document-catalog";
 import { getLayerFreshness, getLayerLicenceClass, RWANDA_DEGRADED_MAP_LAYERS, RWANDA_MAP_CATEGORIES, RWANDA_MAP_VERIFIED_AT, RWANDA_ONLINE_MAP_LAYERS, RWANDA_VERIFIED_MAP_LAYERS, type RwandaLicenceClass, type RwandaMapCategory, type RwandaOnlineMapLayer } from "@/lib/rwanda-map-catalog";
 import type { ObserverKey } from "@/lib/gnss-engine";
+import { RWANDA_GOVERNMENT_SOCIAL_ACCOUNTS } from "@/lib/rwanda-government-social";
 
-type PageKey = "dashboard" | "assistant" | "map" | "maplibrary" | "parcels" | "analysis" | "catalogue" | "knowledge" | "provenance" | "reports" | "cors" | "satellite" | "gnss" | "audit" | "admin" | "health";
+type PageKey = "dashboard" | "assistant" | "map" | "maplibrary" | "parcels" | "analysis" | "catalogue" | "knowledge" | "updates" | "provenance" | "reports" | "cors" | "satellite" | "gnss" | "audit" | "admin" | "health";
 type AssistantAction = { label: string; page: PageKey; params?: Record<string, string> };
 type Message = { id: number; role: "assistant" | "user"; text: string; sources?: string[]; stats?: { label: string; value: string }[]; warning?: string; actions?: AssistantAction[] };
 
@@ -42,6 +44,7 @@ const navGroups: { label: string; items: { key: PageKey; label: string }[] }[] =
   { label: "Knowledge", items: [
     { key: "catalogue", label: "NSDI Catalogue" },
     { key: "knowledge", label: "Knowledge Centre" },
+    { key: "updates", label: "Government Updates" },
     { key: "provenance", label: "Data & Privacy Policy" },
     { key: "reports", label: "Reports" },
   ]},
@@ -51,7 +54,7 @@ const navGroups: { label: string; items: { key: PageKey; label: string }[] }[] =
 ];
 
 const PUBLIC_PAGE_KEYS = new Set<PageKey>([
-  "dashboard", "assistant", "map", "maplibrary", "parcels", "analysis", "catalogue", "knowledge", "provenance", "reports", "cors", "satellite", "gnss",
+  "dashboard", "assistant", "map", "maplibrary", "parcels", "analysis", "catalogue", "knowledge", "updates", "provenance", "reports", "cors", "satellite", "gnss",
 ]);
 
 const PAGE_ICONS: Record<PageKey, LucideIcon> = {
@@ -63,6 +66,7 @@ const PAGE_ICONS: Record<PageKey, LucideIcon> = {
   analysis: Workflow,
   catalogue: Database,
   knowledge: BookOpen,
+  updates: Newspaper,
   provenance: ShieldCheck,
   reports: FileText,
   cors: RadioTower,
@@ -82,6 +86,7 @@ const titles: Record<PageKey, { eyebrow: string; title: string; subtitle: string
   analysis: { eyebrow: "Open spatial tools", title: "GIS Analysis", subtitle: "Run real Turf.js proximity, intersection, buffer and area workflows." },
   catalogue: { eyebrow: "National Spatial Data Infrastructure", title: "NSDI Data Catalogue", subtitle: "Discover available geospatial datasets and their access conditions." },
   knowledge: { eyebrow: "Verified institutional knowledge", title: "Official Document Library", subtitle: "Search authoritative Rwanda land, planning, environment, forestry, water and geospatial publications." },
+  updates: { eyebrow: "Official public information", title: "Rwanda Government Updates", subtitle: "Watch verified land, planning, environment, infrastructure, utilities and leadership channels from one resilient workspace." },
   provenance: { eyebrow: "Source and privacy governance", title: "Data Provenance Policy", subtitle: "Understand source authority, freshness, licensing, on-device processing and operational decision boundaries." },
   reports: { eyebrow: "Evidence and documentation", title: "Reports", subtitle: "Generate traceable decision-support reports with sources and disclaimers." },
   cors: { eyebrow: "Simulated network telemetry", title: "CORS Monitoring", subtitle: "Prototype health view for GNSS reference infrastructure — not live GeoNet data." },
@@ -101,6 +106,7 @@ const pageFacts: Partial<Record<PageKey, { label: string; value: string }[]>> = 
   analysis: [{ label: "Engine", value: "Turf.js" }, { label: "Methods", value: "8 spatial tools" }, { label: "Output", value: "Map + CSV" }],
   catalogue: [{ label: "Discovery", value: "42 datasets" }, { label: "Metadata", value: "NSDI-style" }, { label: "Access", value: "Clearly labelled" }],
   knowledge: [{ label: "Library", value: `${OFFICIAL_DOCUMENTS.length} publications` }, { label: "Sources", value: "Official links" }, { label: "Use", value: "Verify currency" }],
+  updates: [{ label: "Channels", value: `${RWANDA_GOVERNMENT_SOCIAL_ACCOUNTS.length} verified` }, { label: "Coverage", value: "7 public sectors" }, { label: "Access", value: "No API key" }],
   provenance: [{ label: "Classes", value: "4 source types" }, { label: "Privacy", value: "On-device notes" }, { label: "Boundary", value: "No legal decision" }],
   reports: [{ label: "Formats", value: "Traceable PDF" }, { label: "Sources", value: "Evidence listed" }, { label: "Approval", value: "Officer required" }],
   cors: [{ label: "Network", value: "5 demo stations" }, { label: "Telemetry", value: "Simulated" }, { label: "Next step", value: "Open sky view" }],
@@ -116,11 +122,15 @@ const suggestions = [
   "Calculate the area of parcel 1/02/03/04/0012.",
   "Find NSDI datasets about roads.",
   "Find official documents about subdivision.",
+  "Show official government updates about land and infrastructure.",
 ];
 
 function getAssistantResponse(question: string): Message {
   const q = question.toLowerCase();
   const base = { id: Date.now() + 1, role: "assistant" as const };
+  if (q.includes("tweet") || q.includes("social media") || q.includes("government update") || q.includes("official update") || q.includes("public update") || q.includes("reg update") || q.includes("wasac update")) {
+    return { ...base, text: `The Rwanda Government Updates workspace tracks ${RWANDA_GOVERNMENT_SOCIAL_ACCOUNTS.length} official-site-confirmed public channels across land, planning, environment, water, energy, roads, agriculture and national leadership. Live X timelines load only when you request them, while institution-owned newsrooms remain available as a reliable fallback.`, stats: [{ label: "Verified channels", value: String(RWANDA_GOVERNMENT_SOCIAL_ACCOUNTS.length) }, { label: "Public sectors", value: "7" }, { label: "Paid API keys", value: "0" }], sources: ["Official Rwanda institution websites", "Public X profile links", "Institution-owned newsrooms"], warning: "Social posts are public information signals, not legal land records or guaranteed service-status notices.", actions: [{ label: "Open Government Updates", page: "updates" }, { label: "Open official documents", page: "knowledge" }] };
+  }
   if (q.includes("agric") && q.includes("gasabo")) {
     const matches = parcels.filter((parcel) => parcel.district === "Gasabo" && parcel.landUse === "Agriculture");
     const areaHa = matches.reduce((sum, parcel) => sum + parcel.area, 0) / 10_000;
@@ -292,6 +302,7 @@ export default function GeoAIApp() {
               {page === "analysis" && <AnalysisPage onOpenMap={(matches) => { setAnalysisMatches(matches.map((parcel) => parcel.upi)); navigate("map"); }} notify={notify} />}
               {page === "catalogue" && <CataloguePage notify={notify} />}
               {page === "knowledge" && <KnowledgePage notify={notify} />}
+              {page === "updates" && <GovernmentUpdatesPage notify={notify} />}
               {page === "provenance" && <ProvenancePolicyPage />}
               {page === "reports" && <ReportsPage notify={notify} />}
               {page === "cors" && <CorsPage notify={notify} onOpenSky={(observer) => { setGnssObserver(observer); navigate("gnss"); }} />}
