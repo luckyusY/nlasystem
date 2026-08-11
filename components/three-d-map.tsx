@@ -59,6 +59,7 @@ export default function ThreeDMap({ selected, onSelect, highlightedUpis = [] }: 
     if (!containerRef.current || mapRef.current) return;
     let disposed = false;
     let loadTimer: number | undefined;
+    let resizeObserver: ResizeObserver | undefined;
     try {
       if (disposed || !containerRef.current) return;
       const initialSelected = initialSelectedRef.current;
@@ -76,6 +77,8 @@ export default function ThreeDMap({ selected, onSelect, highlightedUpis = [] }: 
         attributionControl: { compact: true },
       });
       mapRef.current = map;
+      resizeObserver = new ResizeObserver(() => map.resize());
+      resizeObserver.observe(containerRef.current);
       loadTimer = window.setTimeout(() => setFailed(true), 20_000);
       map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
       map.addControl(new maplibregl.ScaleControl({ unit: "metric", maxWidth: 110 }), "bottom-left");
@@ -85,10 +88,9 @@ export default function ThreeDMap({ selected, onSelect, highlightedUpis = [] }: 
         if (map.getSource("nla-3d-parcels")) return;
         if (loadTimer) window.clearTimeout(loadTimer);
         const firstLabel = map.getStyle().layers.find((layer) => layer.type === "symbol" && layer.layout?.["text-field"])?.id;
-        map.addSource("openfreemap-3d", { type: "vector", url: "https://tiles.openfreemap.org/planet" });
-        map.addLayer({
+        if (!map.getLayer("building-3d") && map.getSource("openmaptiles")) map.addLayer({
           id: "osm-3d-buildings",
-          source: "openfreemap-3d",
+          source: "openmaptiles",
           "source-layer": "building",
           type: "fill-extrusion",
           minzoom: 14.5,
@@ -130,6 +132,8 @@ export default function ThreeDMap({ selected, onSelect, highlightedUpis = [] }: 
           popupRef.current?.remove();
           popupRef.current = new maplibregl.Popup({ closeButton: false, offset: 12 }).setLngLat(event.lngLat).setDOMContent(popupContent(parcel)).addTo(map);
         });
+        map.resize();
+        map.triggerRepaint();
         setReady(true);
       });
     } catch {
@@ -139,6 +143,7 @@ export default function ThreeDMap({ selected, onSelect, highlightedUpis = [] }: 
     return () => {
       disposed = true;
       if (loadTimer) window.clearTimeout(loadTimer);
+      resizeObserver?.disconnect();
       popupRef.current?.remove();
       mapRef.current?.remove();
       mapRef.current = null;

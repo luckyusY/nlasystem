@@ -639,6 +639,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .analysis-map-note b, .analysis-map-note small { display: block; }
 .analysis-map-note b { font-size: 8px; }
 .analysis-map-note small { margin-top: 3px; color: #8d6542; font-size: 7px; line-height: 1.4; }
+.incident-detail { margin-top: 12px; padding: 14px; }
+.incident-detail > div { display: grid; grid-template-columns: 46px 1fr auto; gap: 10px; align-items: center; padding: 10px; border-bottom: 1px solid var(--soft-line); }
+.incident-detail > div > span { display: grid; place-items: center; width: 42px; height: 32px; border-radius: 7px; color: white; background: var(--nla-blue-deep); font-family: var(--font-plex-mono); font-size: 9px; font-weight: 800; }
+.incident-detail p { margin: 0; }
+.incident-detail b, .incident-detail small { display: block; }
+.incident-detail small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.incident-detail em { color: #934a23; font-size: 9px; font-style: normal; font-weight: 800; }
+.incident-detail > p { display: flex; align-items: center; gap: 7px; margin: 10px 0 0; color: var(--muted); font-size: 9px; }
+.audit-empty, .catalogue-empty { grid-column: 1 / -1; padding: 34px; text-align: center; color: var(--muted); }
+.catalogue-empty h3 { margin: 8px 0; color: var(--ink); }
+.catalogue-empty button { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; color: var(--nla-blue-deep); background: white; font-weight: 800; }
+.registry-panel tbody tr[role="button"]:focus-visible { outline: 3px solid rgba(8,127,174,.35); outline-offset: -3px; }
 
 @media (max-width: 640px) {
   .analysis-empty { min-height: 300px; padding: 26px 18px; }
@@ -653,6 +665,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .three-d-map-badge { left: 10px; right: 10px; bottom: 34px; }
   .three-d-map .maplibregl-ctrl-bottom-right { bottom: 64px; }
   .three-d-map .maplibregl-ctrl-bottom-left { bottom: 70px; }
+  .incident-detail > div { grid-template-columns: 42px 1fr; }
+  .incident-detail em { grid-column: 2; }
 }
 
 /* Motion, depth, and legibility refresh */
@@ -927,6 +941,13 @@ td small { font-size: 10px; }
   .support-panel { border-radius: 20px; }
   .support-launcher { min-width: 58px; width: 58px; height: 58px; }
   .mobile-bottom-nav small { font-size: 10px; }
+}
+
+@media (max-width: 900px) {
+  .support-widget { right: 13px; bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .support-launcher { min-width: 58px; width: 58px; height: 58px; padding: 8px; }
+  .support-launcher > span { width: 42px; height: 42px; }
+  .support-launcher b { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

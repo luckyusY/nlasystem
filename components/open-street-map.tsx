@@ -171,6 +171,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let disposed = false;
+    let resizeObserver: ResizeObserver | undefined;
     void import("leaflet").then((L) => {
       if (disposed || !containerRef.current) return;
       const map = L.map(containerRef.current, {
@@ -194,9 +195,12 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
       onlineLayersRef.current = L.layerGroup().addTo(map);
       setReady(true);
       window.setTimeout(() => map.invalidateSize(), 0);
+      resizeObserver = new ResizeObserver(() => map.invalidateSize({ pan: false }));
+      resizeObserver.observe(containerRef.current);
     });
     return () => {
       disposed = true;
+      resizeObserver?.disconnect();
       overlaysRef.current?.remove();
       drawingRef.current?.remove();
       searchMarkerRef.current?.remove();
