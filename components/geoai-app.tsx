@@ -1,15 +1,16 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { BarChart3, Bell, Bot, BookOpen, Boxes, CircleDotDashed, Combine, Database, Download, ExternalLink, FileDown, FileText, HeartPulse, Home, LandPlot, Layers3, LoaderCircle, Map as MapIcon, Menu, MoreHorizontal, Play, Radar, RadioTower, Route, Satellite, ScanLine, ScrollText, Search, Settings, ShieldCheck, SlidersHorizontal, Sparkles, Tags, TreePine, Waves, Workflow, type LucideIcon } from "lucide-react";
 import { A11y, Keyboard, Pagination } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import OpenStreetMap, { type MapLayerVisibility } from "@/components/open-street-map";
-import { auditEvents, corsStations, datasets, documents, parcels, reports, roles, type Parcel } from "@/lib/data";
+import { auditEvents, corsStations, datasets, parcels, reports, roles, type Parcel } from "@/lib/data";
 import { analyzeParcels, type SpatialMetric } from "@/lib/geospatial-engine";
 import { inferLocalGeoIntent, warmLocalGeoAI, type LocalGeoAIResult } from "@/lib/local-geoai";
+import { DOCUMENT_CATEGORIES, OFFICIAL_DOCUMENTS, searchOfficialDocuments } from "@/lib/official-document-catalog";
 import { RWANDA_MAP_CATEGORIES, RWANDA_ONLINE_MAP_LAYERS, type RwandaMapCategory } from "@/lib/rwanda-map-catalog";
 
 type PageKey = "dashboard" | "assistant" | "map" | "parcels" | "analysis" | "catalogue" | "knowledge" | "reports" | "cors" | "satellite" | "audit" | "admin" | "health";
@@ -55,12 +56,12 @@ const PAGE_ICONS: Record<PageKey, LucideIcon> = {
 
 const titles: Record<PageKey, { eyebrow: string; title: string; subtitle: string }> = {
   dashboard: { eyebrow: "Operational overview", title: "Good evening, Aline", subtitle: "Here is the current state of the GeoAI prototype workspace." },
-  assistant: { eyebrow: "Decision support", title: "NLA GeoAI Assistant", subtitle: "Ask questions across parcels, GIS layers, NSDI metadata and verified demo documents." },
+  assistant: { eyebrow: "Decision support", title: "NLA GeoAI Assistant", subtitle: "Ask questions across parcels, GIS layers, NSDI metadata and verified official-source documents." },
   map: { eyebrow: "National geospatial workspace", title: "Interactive Rwanda Map", subtitle: "Combine parcels with live national, forestry, water, terrain, risk and infrastructure maps." },
   parcels: { eyebrow: "Land intelligence", title: "Parcel Registry", subtitle: "Search and inspect non-sensitive synthetic cadastral records." },
   analysis: { eyebrow: "Open spatial tools", title: "GIS Analysis", subtitle: "Run real Turf.js proximity, intersection, buffer and area workflows." },
   catalogue: { eyebrow: "National Spatial Data Infrastructure", title: "NSDI Data Catalogue", subtitle: "Discover available geospatial datasets and their access conditions." },
-  knowledge: { eyebrow: "Verified institutional knowledge", title: "Knowledge Centre", subtitle: "Search indexed demonstration procedures, manuals and technical guidance." },
+  knowledge: { eyebrow: "Verified institutional knowledge", title: "Official Document Library", subtitle: "Search authoritative Rwanda land, planning, environment, forestry, water and geospatial publications." },
   reports: { eyebrow: "Evidence and documentation", title: "Reports", subtitle: "Generate traceable decision-support reports with sources and disclaimers." },
   cors: { eyebrow: "Simulated network telemetry", title: "CORS Monitoring", subtitle: "Prototype health view for GNSS reference infrastructure — not live GeoNet data." },
   satellite: { eyebrow: "Future capability", title: "Satellite Change Detection", subtitle: "Demonstration workflow for imagery comparison and officer-reviewed findings." },
@@ -76,7 +77,7 @@ const suggestions = [
   "Show Rwanda forestry and land-cover maps.",
   "Calculate the area of parcel 1/02/03/04/0012.",
   "Find NSDI datasets about roads.",
-  "What documents discuss subdivision?",
+  "Find official documents about subdivision.",
 ];
 
 function getAssistantResponse(question: string): Message {
@@ -106,12 +107,24 @@ function getAssistantResponse(question: string): Message {
   }
   const mapTopics = ["forest", "forestry", "land cover", "flood", "erosion", "slope", "soil", "hydrology", "catchment", "biodiversity", "protected area", "air quality", "temperature", "mining", "electricity", "telecom"];
   const requestedMapTopics = mapTopics.filter((topic) => q.includes(topic));
-  if (requestedMapTopics.length) {
+  if (requestedMapTopics.length && !/\b(document|law|policy|manual|report|publication)\b/.test(q)) {
     const matchingMaps = RWANDA_ONLINE_MAP_LAYERS.filter((layer) => requestedMapTopics.some((topic) => `${layer.title} ${layer.description} ${layer.tags.join(" ")}`.toLowerCase().includes(topic))).slice(0, 5);
     return { ...base, text: `I found ${matchingMaps.length} relevant online map services for ${requestedMapTopics.join(" and ")}: ${matchingMaps.map((layer) => layer.title).join(", ")}. Open Interactive Rwanda Map → Rwanda maps to add them as live overlays, combine up to four and adjust opacity.`, stats: [{ label: "Relevant maps", value: String(matchingMaps.length) }, { label: "Full catalogue", value: String(RWANDA_ONLINE_MAP_LAYERS.length) }, { label: "Provider keys", value: "None" }], sources: matchingMaps.map((layer) => `${layer.provider} — ${layer.title} — ${layer.licence}`), warning: "Public visibility does not automatically grant unrestricted reuse. Review the licence shown for each source before publication or operational use." };
   }
   if (q.includes("nsdi") || q.includes("dataset") || q.includes("roads")) return { ...base, text: "Yes. The NSDI demonstration catalogue contains a National Road Network dataset maintained by RTDA. It has national coverage, a 1:10,000 reference scale, EPSG:32736 coordinates and internal access classification.", stats: [{ label: "Catalogue matches", value: "2" }, { label: "Latest update", value: "02 Aug 2026" }, { label: "Access", value: "Internal" }], sources: ["NSDI Catalogue — National Road Network", "NSDI Catalogue — Administrative Boundaries"] };
-  if (q.includes("subdivision") || q.includes("document")) return { ...base, text: "I found relevant sections in two indexed demonstration documents. They describe a prototype review sequence covering parcel identification, zoning checks, survey-plan validation and authorized officer approval. I cannot verify an official legal requirement from demo material alone.", stats: [{ label: "Documents", value: "2" }, { label: "Relevant sections", value: "7" }, { label: "Verification", value: "Required" }], sources: ["Subdivision Review Guide — DEMO, sections 2–4", "Land Administration Procedures — DEMO, section 8"], warning: "These are DEMO documents, not official regulations. Consult an authorized legal or land administration officer." };
+  if (q.includes("subdivision") || q.includes("document") || q.includes("law") || q.includes("policy") || q.includes("manual") || q.includes("report") || q.includes("publication")) {
+    const documentQuery = q.replace(/\b(find|show|official|documents?|about|what|which|discuss|rwanda|nla)\b/g, " ").replace(/\s+/g, " ").trim() || question;
+    const matches = searchOfficialDocuments(documentQuery).slice(0, 4);
+    const fallback = searchOfficialDocuments("subdivision").slice(0, 4);
+    const relevant = matches.length ? matches : fallback;
+    return {
+      ...base,
+      text: `I found ${relevant.length} authoritative-source publication${relevant.length === 1 ? "" : "s"} in the NLA document catalogue: ${relevant.map((document) => document.title).join("; ")}. Open the Official Document Library to read the PDFs and confirm the latest applicable version.`,
+      stats: [{ label: "Document matches", value: String(relevant.length) }, { label: "Catalogue", value: String(OFFICIAL_DOCUMENTS.length) }, { label: "Access", value: "Official links" }],
+      sources: relevant.map((document) => `${document.issuer} — ${document.title} (${document.year})`),
+      warning: "Metadata is searchable in this demo; PDF text is not locally embedded. Laws, orders, policies and plans must be checked against the latest Official Gazette or issuing institution before administrative use.",
+    };
+  }
   return { ...base, text: "I checked the currently connected prototype sources but could not verify a sufficiently specific answer. Try including a parcel UPI, district, layer, distance or document topic.", sources: ["Connected NLA prototype sources"], warning: "Information could not be verified from the currently connected NLA data sources." };
 }
 
@@ -253,7 +266,7 @@ function Dashboard({ onNavigate, notify }: { onNavigate: (p: PageKey) => void; n
   const reduceMotion = useReducedMotion();
   const metrics = [
     ["128", "Synthetic parcels", "+12 this month", "PC"], ["6", "Districts covered", "Prototype scope", "DS"], [String(RWANDA_ONLINE_MAP_LAYERS.length), "Rwanda online maps", "6 source families", "LY"], ["42", "NSDI datasets", "+3 indexed", "NS"],
-    ["28", "Documents indexed", "1,483 demo chunks", "DC"], ["Local", "AI runtime", "No provider key", "AI"], ["8", "GIS operations", "Turf geometry", "GA"], ["Live", "Open-stack health", "Runtime checks", "SH"],
+    [String(OFFICIAL_DOCUMENTS.length), "Official documents", "Searchable metadata", "DC"], ["Local", "AI runtime", "No provider key", "AI"], ["8", "GIS operations", "Turf geometry", "GA"], ["Live", "Open-stack health", "Runtime checks", "SH"],
   ];
   return <div className="dashboard-stack">
     <section className="metric-carousel" aria-label="Operational metrics"><Swiper className="metric-swiper" modules={[A11y, Keyboard, Pagination]} slidesPerView={1.18} spaceBetween={12} keyboard={{ enabled: true }} pagination={{ clickable: true }} breakpoints={{ 520: { slidesPerView: 2.15 }, 900: { slidesPerView: 3.15 }, 1260: { slidesPerView: 4 } }}>{metrics.map(([value, label, detail, mark]) => <SwiperSlide key={label}><motion.article className="metric-card" whileHover={reduceMotion ? undefined : { y: -6, rotateX: 2, rotateY: -1 }} transition={{ type: "spring", stiffness: 260, damping: 22 }}><div className="metric-top"><span className="metric-mark">{mark}</span><i>↗</i></div><strong>{value}</strong><h3>{label}</h3><p>{detail}</p></motion.article></SwiperSlide>)}</Swiper></section>
@@ -261,7 +274,7 @@ function Dashboard({ onNavigate, notify }: { onNavigate: (p: PageKey) => void; n
       <article className="panel span-2"><PanelHeader title="AI activity" detail="Queries by department · last 7 days" action="View audit" onAction={() => onNavigate("audit")} /><div className="chart-wrap"><div className="bar-chart" aria-label="AI queries chart">{[38, 55, 42, 68, 54, 78, 64, 86, 71, 92, 76, 98].map((n, i) => <div key={i}><span style={{ height: `${n}%` }} /><small>{["GIS", "REG", "LU", "NSDI", "MGT", "SVY"][i % 6]}</small></div>)}</div><div className="chart-legend"><p><i className="dot-green" /> GIS <b>34%</b></p><p><i className="dot-amber" /> Land Use <b>27%</b></p><p><i className="dot-blue" /> Other <b>39%</b></p></div></div></article>
       <article className="panel"><PanelHeader title="Parcel categories" detail="Synthetic dataset" /><div className="donut-row"><div className="donut"><div><b>128</b><span>parcels</span></div></div><div className="donut-legend"><p><i className="res" />Residential <b>39%</b></p><p><i className="agr" />Agriculture <b>28%</b></p><p><i className="mix" />Mixed use <b>18%</b></p><p><i className="oth" />Other <b>15%</b></p></div></div></article>
       <article className="panel span-2"><PanelHeader title="Recent GeoAI queries" detail="Answers grounded in connected prototype sources" action="Open assistant" onAction={() => onNavigate("assistant")} /><div className="activity-list"><Activity mark="AU" title="Agricultural parcels within 100 m of KN 5 Road" meta="Aline Uwase · GIS · 6 min ago" tag="37 parcels" /><Activity mark="JM" title="Documents discussing subdivision requirements" meta="Jean Mutesi · Registrar · 18 min ago" tag="2 sources" /><Activity mark="EN" title="Wetland overlap for parcel 1/02/03/04/0012" meta="Eric Niyonzima · Land Use · 34 min ago" tag="No overlap" /></div></article>
-      <article className="panel"><PanelHeader title="System notices" detail="Items that may need attention" /><div className="notice-list"><div className="notice warning"><i>!</i><p><b>MUSN station latency</b><span>286 ms · increasing for 45 min</span></p></div><div className="notice info"><i>i</i><p><b>Catalogue refresh complete</b><span>3 metadata records updated</span></p></div><div className="notice good"><i>✓</i><p><b>Nightly index complete</b><span>28 documents · 1,483 chunks</span></p></div></div></article>
+      <article className="panel"><PanelHeader title="System notices" detail="Items that may need attention" /><div className="notice-list"><div className="notice warning"><i>!</i><p><b>MUSN station latency</b><span>286 ms · increasing for 45 min</span></p></div><div className="notice info"><i>i</i><p><b>Catalogue refresh complete</b><span>3 metadata records updated</span></p></div><div className="notice good"><i>✓</i><p><b>Official document catalogue ready</b><span>{OFFICIAL_DOCUMENTS.length} publications · metadata search</span></p></div></div></article>
     </section>
     <section className="quick-actions"><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("analysis")}><span><Workflow size={18} aria-hidden /></span><b>Run GIS analysis</b><small>Approved spatial operations</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("parcels")}><span><LandPlot size={18} aria-hidden /></span><b>Find a parcel</b><small>Search synthetic records</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("catalogue")}><span><Database size={18} aria-hidden /></span><b>Search NSDI</b><small>Discover available datasets</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => { notify("New parcel assessment draft created"); onNavigate("reports"); }}><span><FileText size={18} aria-hidden /></span><b>Create report</b><small>Traceable decision support</small></motion.button></section>
   </div>;
@@ -274,7 +287,7 @@ function PanelHeader({ title, detail, action, onAction }: { title: string; detai
 function Activity({ mark, title, meta, tag }: { mark: string; title: string; meta: string; tag: string }) { return <div className="activity"><span>{mark}</span><div><b>{title}</b><small>{meta}</small></div><em>{tag}</em></div>; }
 
 function AssistantPage({ onOpenMap, notify }: { onOpenMap: () => void; notify: (s: string) => void }) {
-  const [messages, setMessages] = useState<Message[]>([{ id: 1, role: "assistant", text: "Good evening, Aline. I can help you explore synthetic parcels, run approved GIS operations, search the NSDI catalogue and find verified sections in indexed demo documents. What would you like to investigate?", sources: ["NLA GeoAI prototype services"] }]);
+  const [messages, setMessages] = useState<Message[]>([{ id: 1, role: "assistant", text: "Good evening, Aline. I can help you explore synthetic parcels, run approved GIS operations, search the NSDI catalogue and find authoritative Rwanda land and geospatial publications. What would you like to investigate?", sources: ["NLA GeoAI prototype services", "Official-source document metadata"] }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [localAiState, setLocalAiState] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -323,7 +336,7 @@ function AssistantPage({ onOpenMap, notify }: { onOpenMap: () => void; notify: (
     }, 450);
   };
   return <div className="assistant-layout">
-    <aside className="conversation-panel"><button className="new-chat" onClick={() => setMessages(messages.slice(0, 1))}>＋ New investigation</button><p>Today</p><button className="conversation active"><span>Road buffer · Gasabo</span><small>37 affected parcels</small></button><button className="conversation"><span>Subdivision guidance</span><small>2 verified demo sources</small></button><p>Previous</p><button className="conversation"><span>Wetland intersection</span><small>9 parcels identified</small></button><button className="conversation"><span>NSDI roads data</span><small>Catalogue discovery</small></button><div className="data-scope"><span>✓</span><p><b>Safe data scope</b><small>Synthetic parcels · demo documents · catalogue metadata</small></p></div></aside>
+    <aside className="conversation-panel"><button className="new-chat" onClick={() => setMessages(messages.slice(0, 1))}>＋ New investigation</button><p>Today</p><button className="conversation active"><span>Road buffer · Gasabo</span><small>37 affected parcels</small></button><button className="conversation"><span>Subdivision guidance</span><small>Official-source publications</small></button><p>Previous</p><button className="conversation"><span>Wetland intersection</span><small>9 parcels identified</small></button><button className="conversation"><span>NSDI roads data</span><small>Catalogue discovery</small></button><div className="data-scope"><span>✓</span><p><b>Safe data scope</b><small>Synthetic parcels · public documents · catalogue metadata</small></p></div></aside>
     <section className="chat-panel"><div className="chat-status"><div><span className="ai-orb">✦</span><p><b>NLA GeoAI</b><small><i /> {localAiState === "ready" ? "Local AI + grounded GIS tools" : "Grounded GIS tools · local AI optional"}</small></p></div><button onClick={() => notify("Conversation exported to audit-safe text")}>Export</button></div>
       <div className="messages">
         {messages.map((message) => <div className={`message ${message.role}`} key={message.id}>{message.role === "assistant" && <span className="message-avatar">✦</span>}<div className="message-body"><small>{message.role === "assistant" ? "GEOAI ASSISTANT" : "YOU"}</small><p>{message.text}</p>{message.stats && <div className="answer-stats">{message.stats.map((stat) => <div key={stat.label}><b>{stat.value}</b><span>{stat.label}</span></div>)}</div>}{message.sources && <div className="sources"><b>Sources used</b>{message.sources.map((source) => <span key={source}>↗ {source}</span>)}</div>}{message.warning && <div className="answer-warning"><b>Human verification required</b><span>{message.warning}</span></div>}{message.stats && <div className="message-actions"><button onClick={onOpenMap}>View on map</button><button onClick={() => notify("Assessment added to a report draft")}>Add to report</button></div>}</div></div>)}
@@ -332,7 +345,7 @@ function AssistantPage({ onOpenMap, notify }: { onOpenMap: () => void; notify: (
       {messages.length < 3 && <div className="suggestion-grid">{suggestions.map((s) => <button key={s} onClick={() => submit(s)}><span>↗</span>{s}</button>)}</div>}
       <form className="prompt-box" onSubmit={(e: FormEvent) => { e.preventDefault(); submit(input); }}><textarea aria-label="Ask GeoAI" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about a parcel, GIS layer, dataset or verified document…" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(input); } }} /><div><span>GeoAI may make mistakes. Verify important decisions.</span><button disabled={!input.trim() || loading} aria-label="Send question">↑</button></div></form>
     </section>
-    <aside className="context-panel"><PanelHeader title="Active context" detail="Sources available to this chat" /><ContextItem mark="PC" title="Synthetic parcels" meta="128 records · 6 districts" status="Ready" /><ContextItem mark="MP" title="Open GIS engine" meta="Turf · Proj4 · GeoJSON" status="Ready" /><ContextItem mark="OS" title="OpenStreetMap services" meta="Photon search · Overpass places" status="Live" /><ContextItem mark="KC" title="Knowledge index" meta="28 demonstration documents" status="Demo" /><div className={`local-ai-card ${localAiState}`}><div><span>AI</span><p><b>NLA Local GeoAI</b><small>{localAiDetail}</small></p></div>{localAiState === "loading" && <div className="local-ai-progress"><i style={{ width: `${Math.max(4, localAiProgress)}%` }} /></div>}{localInsight && <p className="local-ai-insight">Last route: <b>{localInsight.label}</b> · {Math.round(localInsight.confidence * 100)}%</p>}<button onClick={() => void enableLocalAI()} disabled={localAiState === "loading" || localAiState === "ready"}>{localAiState === "ready" ? "Local model ready" : localAiState === "loading" ? `Loading ${localAiProgress}%` : localAiState === "error" ? "Retry local AI" : "Enable no-key local AI"}</button><small>First use downloads a quantized open model. Prompts and inference stay in your browser.</small></div><div className="guardrail-card"><span>◆</span><h3>Built-in guardrails</h3><p>GeoAI can search, analyse and explain. It cannot register, transfer or alter land rights.</p><button onClick={() => notify("Security policy reference opened")}>View safety policy</button></div></aside>
+    <aside className="context-panel"><PanelHeader title="Active context" detail="Sources available to this chat" /><ContextItem mark="PC" title="Synthetic parcels" meta="128 records · 6 districts" status="Ready" /><ContextItem mark="MP" title="Open GIS engine" meta="Turf · Proj4 · GeoJSON" status="Ready" /><ContextItem mark="OS" title="OpenStreetMap services" meta="Photon search · Overpass places" status="Live" /><ContextItem mark="KC" title="Official documents" meta={`${OFFICIAL_DOCUMENTS.length} verified source links`} status="Ready" /><div className={`local-ai-card ${localAiState}`}><div><span>AI</span><p><b>NLA Local GeoAI</b><small>{localAiDetail}</small></p></div>{localAiState === "loading" && <div className="local-ai-progress"><i style={{ width: `${Math.max(4, localAiProgress)}%` }} /></div>}{localInsight && <p className="local-ai-insight">Last route: <b>{localInsight.label}</b> · {Math.round(localInsight.confidence * 100)}%</p>}<button onClick={() => void enableLocalAI()} disabled={localAiState === "loading" || localAiState === "ready"}>{localAiState === "ready" ? "Local model ready" : localAiState === "loading" ? `Loading ${localAiProgress}%` : localAiState === "error" ? "Retry local AI" : "Enable no-key local AI"}</button><small>First use downloads a quantized open model. Prompts and inference stay in your browser.</small></div><div className="guardrail-card"><span>◆</span><h3>Built-in guardrails</h3><p>GeoAI can search, analyse and explain. It cannot register, transfer or alter land rights.</p><button onClick={() => notify("Security policy reference opened")}>View safety policy</button></div></aside>
   </div>;
 }
 
@@ -491,8 +504,80 @@ function CataloguePage({ notify }: { notify: (s: string) => void }) {
 }
 
 function KnowledgePage({ notify }: { notify: (s: string) => void }) {
-  const [query, setQuery] = useState("subdivision"); const [searched, setSearched] = useState(true);
-  return <div className="knowledge-layout"><section><div className="knowledge-search"><span>KC</span><div><h2>Search verified institutional knowledge</h2><p>Answers are limited to indexed content and always cite their source.</p></div><form onSubmit={(e) => { e.preventDefault(); setSearched(true); }}><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search procedures, manuals and guidelines…" /><button>Search</button></form></div>{searched && <div className="knowledge-answer"><div className="answer-label"><span>✦</span><p><b>GeoAI knowledge summary</b><small>Based on 7 relevant sections in 2 demo documents</small></p></div><p>The indexed demonstration material describes a subdivision review sequence that includes parcel identification, zoning compatibility, a survey-plan check and final review by an authorized officer. The connected sources are not official legal instruments, so requirements cannot be treated as verified law.</p><div className="quote-block"><span>Most relevant section · DEMO</span><p>“Confirm the parent parcel reference, applicable planning zone and completeness of the survey submission before routing the case for authorized review.”</p><b>Subdivision Review Guide — DEMO · Section 3.2</b></div><div className="answer-warning"><b>Verification required</b><span>Consult current official regulations and an authorized NLA officer before administrative use.</span></div></div>}<div className="document-list panel"><PanelHeader title="Indexed documents" detail="28 documents · 1,483 searchable chunks" action="Manage index" onAction={() => notify("Knowledge index management opened")} />{documents.map((d) => <div className="document-row" key={d.title}><span>DOC</span><div><b>{d.title}</b><small>{d.category} · {d.pages} pages · {d.sections} sections</small></div><em>{d.status}</em><time>{d.updated}</time><button>•••</button></div>)}</div></section><aside className="upload-card"><span>↑</span><h3>Add a knowledge document</h3><p>PDF, DOCX or TXT · demo and authorized content only</p><label><input type="file" accept=".pdf,.docx,.txt" onChange={() => notify("Demo upload received for administrator review")} />Choose file</label><small>Uploads are virus-scanned, classified and audited before indexing.</small><hr /><h3>Index health</h3><div><p><span>Vector search</span><b>Healthy</b></p><p><span>Last indexed</span><b>8 min ago</b></p><p><span>Pending review</span><b>2 files</b></p></div></aside></div>;
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("All categories");
+  const matches = useMemo(() => searchOfficialDocuments(query, category), [query, category]);
+  const issuers = new Set(OFFICIAL_DOCUMENTS.map((document) => document.issuer)).size;
+
+  return <div className="knowledge-layout">
+    <section>
+      <div className="knowledge-search">
+        <span><BookOpen size={18} aria-hidden /></span>
+        <div><h2>Search Rwanda&apos;s official-source document library</h2><p>Find NLA laws, manuals, plans and reports together with related environment, forestry and water publications.</p></div>
+        <form onSubmit={(event) => event.preventDefault()}>
+          <Search size={17} aria-hidden />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try land law, subdivision, zoning, wetland or surveying…" aria-label="Search official documents" />
+          {query && <button type="button" className="knowledge-clear" onClick={() => setQuery("")} aria-label="Clear document search">Clear</button>}
+        </form>
+      </div>
+
+      <div className="knowledge-stats" aria-label="Document library summary">
+        <article><FileText size={18} aria-hidden /><span><b>{OFFICIAL_DOCUMENTS.length}</b><small>Publications</small></span></article>
+        <article><ShieldCheck size={18} aria-hidden /><span><b>{issuers}</b><small>Official issuers</small></span></article>
+        <article><Search size={18} aria-hidden /><span><b>{matches.length}</b><small>Current matches</small></span></article>
+      </div>
+
+      <div className="document-toolbar panel">
+        <div className="document-categories" aria-label="Document category filters">
+          {DOCUMENT_CATEGORIES.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}</button>)}
+        </div>
+        <p><ShieldCheck size={15} aria-hidden /> Metadata verified against public institutional publication pages. PDFs open on the issuing organisation&apos;s website.</p>
+      </div>
+
+      {query && <div className="knowledge-answer">
+        <div className="answer-label"><span><Sparkles size={15} aria-hidden /></span><p><b>NLA document search</b><small>{matches.length} metadata match{matches.length === 1 ? "" : "es"} for “{query}”</small></p></div>
+        <p>{matches.length ? `The strongest matches are ${matches.slice(0, 3).map((document) => `${document.title} (${document.year})`).join(", ")}. Open the original PDF for the complete wording, maps, tables and appendices.` : "No exact metadata match was found. Try a broader term such as land, surveying, zoning, environment, forestry or water."}</p>
+        <div className="answer-warning"><b>Source boundary</b><span>This demo searches curated metadata, not the full text of every PDF. Legal applicability and later amendments must be confirmed with the Official Gazette or issuing institution.</span></div>
+      </div>}
+
+      <div className="document-list panel">
+        <PanelHeader title="Authoritative publications" detail={`${matches.length} of ${OFFICIAL_DOCUMENTS.length} documents`} action="Source policy" onAction={() => notify("Only official institutional sources are included in this library")} />
+        <div className="document-grid">
+          {matches.map((document) => <article className="document-card" key={document.id}>
+            <div className="document-card-top">
+              <span className="document-icon"><FileText size={20} aria-hidden /></span>
+              <div><p>{document.category}</p><h3>{document.title}</h3></div>
+              {document.featured && <em>Featured</em>}
+            </div>
+            <p className="document-description">{document.description}</p>
+            <div className="document-tags">{document.tags.slice(0, 4).map((tag) => <span key={tag}>{tag}</span>)}</div>
+            <dl>
+              <div><dt>Issuer</dt><dd>{document.issuer}</dd></div>
+              <div><dt>Published</dt><dd>{document.year}</dd></div>
+              <div><dt>Language</dt><dd>{document.language}</dd></div>
+              <div><dt>Status</dt><dd>{document.legalInstrument ? "Official instrument" : "Official publication"}</dd></div>
+            </dl>
+            <div className="document-actions">
+              <a className="document-open" href={document.pdfUrl} target="_blank" rel="noreferrer"><FileText size={15} aria-hidden />Open PDF<ExternalLink size={13} aria-hidden /></a>
+              <a href={document.sourceUrl} target="_blank" rel="noreferrer">View source<ExternalLink size={13} aria-hidden /></a>
+            </div>
+          </article>)}
+        </div>
+        {!matches.length && <div className="document-empty"><Search size={24} aria-hidden /><h3>No matching publications</h3><p>Clear the search or select another category.</p><button onClick={() => { setQuery(""); setCategory("All categories"); }}>Show all documents</button></div>}
+      </div>
+    </section>
+
+    <aside className="upload-card document-source-card">
+      <span><ShieldCheck size={21} aria-hidden /></span>
+      <h3>Curated official sources</h3>
+      <p>This catalogue links to documents published by NLA, the Ministry of Environment, REMA and Rwanda Water Resources Board.</p>
+      <a href="https://www.lands.rw/publications" target="_blank" rel="noreferrer">Browse NLA publications<ExternalLink size={13} aria-hidden /></a>
+      <hr />
+      <h3>Catalogue status</h3>
+      <div><p><span>Metadata search</span><b>Ready</b></p><p><span>External PDFs</span><b>{OFFICIAL_DOCUMENTS.length}</b></p><p><span>Full-text embedding</span><b>Not claimed</b></p></div>
+      <div className="source-caution"><ShieldCheck size={15} aria-hidden /><p><b>Always verify currency</b><small>A public PDF can be amended, replaced or repealed. Confirm legal and operational use with the latest official source.</small></p></div>
+    </aside>
+  </div>;
 }
 
 function downloadSimplePdf(title: string, id: string) {
