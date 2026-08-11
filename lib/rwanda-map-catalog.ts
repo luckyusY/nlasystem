@@ -23,6 +23,22 @@ export type RwandaOnlineMapLayer = {
   serviceNote?: string;
 };
 
+export type RwandaLicenceClass = "open" | "attribution" | "verify";
+
+export function getLayerLicenceClass(layer: RwandaOnlineMapLayer): RwandaLicenceClass {
+  const licence = layer.licence.toLowerCase();
+  if (licence.includes("public domain") || licence.includes("cc0")) return "open";
+  if (licence.includes("cc by") || licence.includes("openstreetmap") || licence.includes("attribution")) return "attribution";
+  return "verify";
+}
+
+export function getLayerFreshness(layer: RwandaOnlineMapLayer) {
+  const yearMatches = layer.vintage.match(/20\d{2}/g) ?? [];
+  const observation = yearMatches.length ? yearMatches.join("–") : "Not stated by service";
+  const publication = /published/i.test(layer.vintage) ? layer.vintage : yearMatches.length ? `Dataset vintage ${yearMatches.at(-1)}` : "Current portal record";
+  return { observation, publication, endpointCheck: RWANDA_MAP_VERIFIED_AT };
+}
+
 const RSA_ROOT = "https://gh.space.gov.rw/server/rest/services";
 const RWB_WMS = "https://www.geoportal.rwb.rw/geoserver/ows";
 

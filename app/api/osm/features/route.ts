@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { fetchWithTimeout } from "@/lib/network";
 
 type OverpassElement = {
   id: number;
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
 );
 out center tags 80;`;
   try {
-    const response = await fetch("https://overpass.kumi.systems/api/interpreter", {
+    const response = await fetchWithTimeout("https://overpass.kumi.systems/api/interpreter", {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -35,8 +36,7 @@ out center tags 80;`;
       },
       body: new URLSearchParams({ data: overpassQuery }),
       next: { revalidate: 900 },
-      signal: AbortSignal.timeout(15_000),
-    });
+    }, { timeoutMs: 12_000, retries: 1, retryDelayMs: 400 });
     if (!response.ok) throw new Error(`Overpass returned ${response.status}`);
     const data = await response.json() as { elements?: OverpassElement[] };
     const features = (data.elements ?? []).flatMap((element) => {

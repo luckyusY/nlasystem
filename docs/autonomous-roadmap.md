@@ -98,13 +98,13 @@ This roadmap turns the demonstration into a useful, map-first geospatial prototy
 - [x] **071 — Curate Rwanda online map services.** The catalogue includes official/public land, water, terrain, forest and risk services.
 - [x] **072 — Verify live layer endpoints.** The catalogue separates verified, degraded and temporarily unavailable sources.
 - [x] **073 — Add official document metadata.** Authoritative Rwanda land and geospatial publications are searchable by topic.
-- [ ] **074 — Add source freshness labels.** Datasets distinguish observation date, publication date and last endpoint check.
-- [ ] **075 — Add licence filtering.** Users can filter sources by open, attribution-required and restricted/unknown reuse.
-- [ ] **076 — Add WMS capabilities inspection.** A service can show supported layers, CRS, bounds and formats.
-- [ ] **077 — Add ArcGIS service metadata inspection.** Layer fields, extent, copyright and supported operations are visible.
-- [ ] **078 — Add document link checking.** Broken official PDF/source links are reported in System Health.
+- [x] **074 — Add source freshness labels.** Datasets distinguish observation date, publication date and last endpoint check.
+- [x] **075 — Add licence filtering.** Users can filter sources by open, attribution-required and restricted/unknown reuse.
+- [x] **076 — Add WMS capabilities inspection.** A service can show supported layers, CRS, bounds and formats.
+- [x] **077 — Add ArcGIS service metadata inspection.** Layer fields, extent, copyright and supported operations are visible.
+- [x] **078 — Add document link checking.** Broken official PDF/source links are reported in System Health.
 - [x] **079 — Add evidence bundles.** Analysis exports include machine-readable source identifiers and retrieval timestamps.
-- [ ] **080 — Add a provenance policy page.** The product explains authoritative, public, community and synthetic source classes.
+- [x] **080 — Add a provenance policy page.** The product explains authoritative, public, community and synthetic source classes.
 
 ## I. NLA GeoAI, usability and accessibility
 
@@ -112,22 +112,22 @@ This roadmap turns the demonstration into a useful, map-first geospatial prototy
 - [x] **082 — Provide a no-key local AI option.** Optional Transformers.js inference runs in the browser after user activation.
 - [x] **083 — Add change-monitoring intents.** NLA GeoAI can open and explain construction-change results and parameters.
 - [x] **084 — Add GNSS intents.** NLA GeoAI can open Sky View and explain masks, DOP and constellation selection.
-- [ ] **085 — Add cross-page command links.** Assistant answers can directly open the relevant map, layer, parcel or analysis.
-- [ ] **086 — Improve base typography.** Dense 7–9 px labels are raised to readable minimums without losing hierarchy.
-- [ ] **087 — Audit keyboard navigation.** Every control has a visible focus state and logical tab order.
-- [ ] **088 — Audit screen-reader names.** Interactive icons, plots and map controls have descriptive accessible labels.
-- [ ] **089 — Meet touch-target guidance.** Primary mobile controls are at least 44 px on their shortest side.
-- [ ] **090 — Honour reduced motion.** Animated scans, cards and sky epochs offer non-animated equivalents.
+- [x] **085 — Add cross-page command links.** Assistant answers can directly open the relevant map, layer, parcel or analysis.
+- [x] **086 — Improve base typography.** Dense 7–9 px labels are raised to readable minimums without losing hierarchy.
+- [x] **087 — Audit keyboard navigation.** Every control has a visible focus state and logical tab order.
+- [x] **088 — Audit screen-reader names.** Interactive icons, plots and map controls have descriptive accessible labels.
+- [x] **089 — Meet touch-target guidance.** Primary mobile controls are at least 44 px on their shortest side.
+- [x] **090 — Honour reduced motion.** Animated scans, cards and sky epochs offer non-animated equivalents.
 
 ## J. Reliability, QA and delivery
 
-- [ ] **091 — Add engine unit tests.** Change scoring, area conversion, polar coordinates and DOP calculations have deterministic tests.
-- [ ] **092 — Add component interaction tests.** Threshold, constellation and export controls are covered.
-- [ ] **093 — Add a smoke-test checklist.** The repository records repeatable desktop and mobile validation scenarios.
-- [ ] **094 — Add runtime error boundaries.** A failed map or scientific component has a useful recovery state.
-- [ ] **095 — Add network timeouts and retries.** Public map/search calls fail quickly and expose a retry action.
-- [ ] **096 — Add performance budgets.** Build size and map startup targets are documented and checked.
-- [ ] **097 — Add privacy review notes.** Browser location, imported files, local AI and exports state what remains on-device.
+- [x] **091 — Add engine unit tests.** Change scoring, area conversion, polar coordinates and DOP calculations have deterministic tests.
+- [x] **092 — Add component interaction tests.** Threshold, constellation and export controls are covered.
+- [x] **093 — Add a smoke-test checklist.** The repository records repeatable desktop and mobile validation scenarios.
+- [x] **094 — Add runtime error boundaries.** A failed map or scientific component has a useful recovery state.
+- [x] **095 — Add network timeouts and retries.** Public map/search calls fail quickly and expose a retry action.
+- [x] **096 — Add performance budgets.** Build size and map startup targets are documented and checked.
+- [x] **097 — Add privacy review notes.** Browser location, imported files, local AI and exports state what remains on-device.
 - [x] **098 — Keep lint and production build green.** Every implementation batch passes both checks before publication.
 - [x] **099 — Validate responsive workflows.** Map, change monitoring and GNSS are exercised at desktop and 390 × 844 mobile sizes.
 - [x] **100 — Publish each verified batch.** Changes are committed, pushed to the draft PR and checked on Vercel.

@@ -8,6 +8,7 @@ import { Box, Download, Eraser, Expand, LocateFixed, Map, MapPinned, MousePointe
 import { parcels, type Parcel } from "@/lib/data";
 import { calculatePolygonArea, getReferenceLayers, KIGALI_CENTER_LATLNG, parseRwandaCoordinate, parcelCenterLatLng, parcelRingLatLng, RWANDA_BOUNDS, toUtm36S } from "@/lib/geospatial-engine";
 import { buildArcGisExportUrl, findRwandaOnlineLayer, RWANDA_IMAGE_BOUNDS } from "@/lib/rwanda-map-catalog";
+import { fetchWithTimeout } from "@/lib/network";
 
 const ThreeDMap = dynamic(() => import("@/components/three-d-map"), { ssr: false, loading: () => <div className="three-d-map-loading"><Box size={20} aria-hidden />Loading the 3D engine…</div> });
 
@@ -152,7 +153,7 @@ async function searchPhotonDirect(query: string) {
   endpoint.searchParams.set("limit", "12");
   endpoint.searchParams.set("lang", "en");
   endpoint.searchParams.set("bbox", "28.8,-2.9,30.9,-1.0");
-  const response = await fetch(endpoint);
+  const response = await fetchWithTimeout(endpoint, {}, { timeoutMs: 7_000, retries: 1 });
   if (!response.ok) throw new Error("Open map search is unavailable.");
   const data = await response.json() as { features?: PhotonFeature[] };
   return normalizePhotonResults(data.features ?? []);
@@ -166,12 +167,12 @@ async function loadOverpassFeaturesDirect(lat: number, lon: number, signal: Abor
   nwr(around:1200,${lat.toFixed(6)},${lon.toFixed(6)})["tourism"~"museum|viewpoint|attraction"];
 );
 out center tags 80;`;
-  const response = await fetch("https://overpass.kumi.systems/api/interpreter", {
+  const response = await fetchWithTimeout("https://overpass.kumi.systems/api/interpreter", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
     body: new URLSearchParams({ data: query }),
     signal,
-  });
+  }, { timeoutMs: 10_000, retries: 1, retryDelayMs: 350 });
   if (!response.ok) throw new Error("Live OpenStreetMap places are unavailable.");
   const data = await response.json() as { elements?: OverpassElement[] };
   return normalizeOverpassFeatures(data.elements ?? []);
@@ -437,7 +438,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     setPlacesLoading(true);
     const requestFeatures = async () => {
       if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") return loadOverpassFeaturesDirect(center.lat, center.lng, controller.signal);
-      const response = await fetch(`/api/osm/features?lat=${center.lat.toFixed(6)}&lon=${center.lng.toFixed(6)}&radius=1200`, { signal: controller.signal });
+      const response = await fetchWithTimeout(`/api/osm/features?lat=${center.lat.toFixed(6)}&lon=${center.lng.toFixed(6)}&radius=1200`, { signal: controller.signal }, { timeoutMs: 9_000, retries: 1 });
       const data = await response.json() as { features?: OsmFeature[]; error?: string };
       if (!response.ok) return loadOverpassFeaturesDirect(center.lat, center.lng, controller.signal);
       return data.features ?? [];
@@ -490,7 +491,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
       if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
         results = await searchPhotonDirect(term);
       } else {
-        const response = await fetch(`/api/osm/search?q=${encodeURIComponent(term)}`);
+        const response = await fetchWithTimeout(`/api/osm/search?q=${encodeURIComponent(term)}`, {}, { timeoutMs: 8_000, retries: 1 });
         const data = await response.json() as { results?: SearchResult[]; error?: string };
         results = response.ok ? data.results ?? [] : await searchPhotonDirect(term);
       }

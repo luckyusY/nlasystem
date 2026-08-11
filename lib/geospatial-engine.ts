@@ -127,8 +127,11 @@ export function parseRwandaCoordinate(input: string): { lat: number; lng: number
   if (numbers.length < 2) return null;
   const mentionsUtm = /\b(utm|32736|36s|easting|northing)\b/i.test(input);
   if (mentionsUtm || (numbers[0] > 1000 && numbers[1] > 1_000_000)) {
-    const [lng, lat] = fromUtm36S([numbers[numbers.length - 2], numbers[numbers.length - 1]]);
-    if (lat >= RWANDA_BOUNDS[0][0] && lat <= RWANDA_BOUNDS[1][0] && lng >= RWANDA_BOUNDS[0][1] && lng <= RWANDA_BOUNDS[1][1]) return { lat, lng, label: `UTM 36S ${numbers[numbers.length - 2].toFixed(0)} E, ${numbers[numbers.length - 1].toFixed(0)} N` };
+    const projected = numbers.filter((number) => Math.abs(number) > 100_000).slice(-2);
+    if (projected.length < 2) return null;
+    const [easting, northing] = projected;
+    const [lng, lat] = fromUtm36S([easting, northing]);
+    if (lat >= RWANDA_BOUNDS[0][0] && lat <= RWANDA_BOUNDS[1][0] && lng >= RWANDA_BOUNDS[0][1] && lng <= RWANDA_BOUNDS[1][1]) return { lat, lng, label: `UTM 36S ${easting.toFixed(0)} E, ${northing.toFixed(0)} N` };
     return null;
   }
   const [first, second] = numbers;

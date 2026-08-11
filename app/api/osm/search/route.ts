@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { fetchWithTimeout } from "@/lib/network";
 
 type PhotonFeature = {
   geometry?: { coordinates?: [number, number] };
@@ -30,14 +31,13 @@ export async function GET(request: NextRequest) {
   endpoint.searchParams.set("bbox", "28.8,-2.9,30.9,-1.0");
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       headers: {
         Accept: "application/json",
         "User-Agent": "NLA-GeoAI-Demo/1.0 (+https://nla-geoai.vercel.app)",
       },
       next: { revalidate: 3600 },
-      signal: AbortSignal.timeout(12_000),
-    });
+    }, { timeoutMs: 8_000, retries: 1 });
     if (!response.ok) throw new Error(`Photon returned ${response.status}`);
     const data = await response.json() as { features?: PhotonFeature[] };
     const results = (data.features ?? []).flatMap((feature) => {

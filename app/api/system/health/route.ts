@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { RWANDA_ONLINE_MAP_LAYERS } from "@/lib/rwanda-map-catalog";
+import { fetchWithTimeout } from "@/lib/network";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,11 +16,10 @@ type CheckedService = {
 async function checkService(id: string, name: string, url: string, detail: string): Promise<CheckedService> {
   const started = performance.now();
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       headers: { Accept: "*/*", "User-Agent": "NLA-GeoAI-Demonstration/1.0" },
       cache: "no-store",
-      signal: AbortSignal.timeout(12_000),
-    });
+    }, { timeoutMs: 8_000, retries: 1 });
     return {
       id,
       name,
