@@ -47,11 +47,12 @@ const navGroups: { label: string; items: { key: PageKey; label: string }[] }[] =
   ]},
   { label: "Operations", items: [
     { key: "cors", label: "CORS Monitoring" },
-    { key: "audit", label: "Audit Logs" },
-    { key: "admin", label: "Administration" },
-    { key: "health", label: "System Health" },
   ]},
 ];
+
+const PUBLIC_PAGE_KEYS = new Set<PageKey>([
+  "dashboard", "assistant", "map", "maplibrary", "parcels", "analysis", "catalogue", "knowledge", "provenance", "reports", "cors", "satellite", "gnss",
+]);
 
 const PAGE_ICONS: Record<PageKey, LucideIcon> = {
   dashboard: BarChart3,
@@ -89,6 +90,22 @@ const titles: Record<PageKey, { eyebrow: string; title: string; subtitle: string
   audit: { eyebrow: "Security and accountability", title: "Audit Logs", subtitle: "Search important user, data and analysis events across the prototype." },
   admin: { eyebrow: "Access and configuration", title: "Administration", subtitle: "Manage prototype roles, permissions, content and service configuration." },
   health: { eyebrow: "Platform operations", title: "System Health", subtitle: "Monitor connected prototype services and deployment readiness." },
+};
+
+const pageFacts: Partial<Record<PageKey, { label: string; value: string }[]>> = {
+  dashboard: [{ label: "Workspace", value: "Officer overview" }, { label: "Coverage", value: "Rwanda demo" }, { label: "Focus", value: "Action queue" }],
+  assistant: [{ label: "Grounding", value: "Connected sources" }, { label: "Privacy", value: "Browser-first" }, { label: "Output", value: "Officer review" }],
+  map: [{ label: "Map sources", value: `${RWANDA_ONLINE_MAP_LAYERS.length} curated` }, { label: "Basemaps", value: `${Object.keys(BASEMAPS).length} switchable` }, { label: "Mode", value: "2D + 3D" }],
+  maplibrary: [{ label: "Catalogue", value: `${RWANDA_MAP_CATEGORIES.length} themes` }, { label: "Licensing", value: "Source-aware" }, { label: "Action", value: "Add to map" }],
+  parcels: [{ label: "Records", value: `${parcels.length} synthetic` }, { label: "Coordinates", value: "WGS84 + UTM" }, { label: "Field use", value: "Evidence bundle" }],
+  analysis: [{ label: "Engine", value: "Turf.js" }, { label: "Methods", value: "8 spatial tools" }, { label: "Output", value: "Map + CSV" }],
+  catalogue: [{ label: "Discovery", value: "42 datasets" }, { label: "Metadata", value: "NSDI-style" }, { label: "Access", value: "Clearly labelled" }],
+  knowledge: [{ label: "Library", value: `${OFFICIAL_DOCUMENTS.length} publications` }, { label: "Sources", value: "Official links" }, { label: "Use", value: "Verify currency" }],
+  provenance: [{ label: "Classes", value: "4 source types" }, { label: "Privacy", value: "On-device notes" }, { label: "Boundary", value: "No legal decision" }],
+  reports: [{ label: "Formats", value: "Traceable PDF" }, { label: "Sources", value: "Evidence listed" }, { label: "Approval", value: "Officer required" }],
+  cors: [{ label: "Network", value: "5 demo stations" }, { label: "Telemetry", value: "Simulated" }, { label: "Next step", value: "Open sky view" }],
+  satellite: [{ label: "Method", value: "Weighted change" }, { label: "Quality", value: "Cloud penalties" }, { label: "Output", value: "Review queue" }],
+  gnss: [{ label: "Systems", value: "4 constellations" }, { label: "Geometry", value: "DOP computed" }, { label: "Epoch", value: "Simulated" }],
 };
 
 const suggestions = [
@@ -166,7 +183,7 @@ export default function GeoAIApp() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const requested = new URLSearchParams(window.location.search).get("page") as PageKey | null;
-      if (requested && requested in titles) setPage(requested);
+      if (requested && PUBLIC_PAGE_KEYS.has(requested)) setPage(requested);
       setWorkspaceUrlReady(true);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -242,7 +259,7 @@ export default function GeoAIApp() {
         <div className="sidebar-foot">
           <div className="user-avatar">AU</div>
           <div><strong>Aline Uwase</strong><small>GIS Officer</small></div>
-          <button onClick={() => notify("Profile settings are managed in the Administration workspace")} aria-label="User options">•••</button>
+          <button onClick={() => notify("Profile controls are intentionally hidden in this public demonstration")} aria-label="User options">•••</button>
         </div>
       </aside>
 
@@ -264,7 +281,7 @@ export default function GeoAIApp() {
 
         <div className="content-wrap">
           <AnimatePresence mode="wait" initial={false}>
-            <motion.div className="page-stage" key={page} initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 16, rotateX: -1.5 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }} transition={{ duration: reduceMotion ? 0.08 : 0.28, ease: [0.22, 1, 0.36, 1] }}>
+            <motion.div className={`page-stage page-${page}`} key={page} initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 16, rotateX: -1.5 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }} transition={{ duration: reduceMotion ? 0.08 : 0.28, ease: [0.22, 1, 0.36, 1] }}>
               <PageIntro page={page} onAsk={() => navigate("assistant")} />
               <RuntimeBoundary resetKey={page}>
               {page === "dashboard" && <Dashboard onNavigate={navigate} notify={notify} />}
@@ -335,20 +352,30 @@ function GeoAISupportBubble({ onNavigate }: { onNavigate: (page: PageKey) => voi
 function PageIntro({ page, onAsk }: { page: PageKey; onAsk: () => void }) {
   const info = titles[page];
   const PageIcon = PAGE_ICONS[page];
-  return <section className="page-intro"><div><p><PageIcon size={14} aria-hidden />{info.eyebrow}</p><h1>{info.title}</h1><span>{info.subtitle}</span></div>{page !== "assistant" && <button className="primary-button" onClick={onAsk}><Sparkles size={15} aria-hidden /> Ask NLA GeoAI</button>}</section>;
+  const facts = pageFacts[page] ?? [];
+  return <section className="page-intro">
+    <div className="page-intro-copy">
+      <span className="page-intro-icon"><PageIcon size={25} strokeWidth={1.8} aria-hidden /></span>
+      <div><p>{info.eyebrow}</p><h1>{info.title}</h1><span>{info.subtitle}</span></div>
+    </div>
+    <div className="page-intro-tools">
+      {!!facts.length && <dl className="page-facts" aria-label={`${info.title} workspace facts`}>{facts.map((fact) => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}</dl>}
+      {page !== "assistant" && <button className="primary-button" onClick={onAsk}><Sparkles size={15} aria-hidden /> Ask NLA GeoAI</button>}
+    </div>
+  </section>;
 }
 
 function Dashboard({ onNavigate, notify }: { onNavigate: (p: PageKey) => void; notify: (s: string) => void }) {
   const reduceMotion = useReducedMotion();
   const metrics = [
     ["128", "Synthetic parcels", "+12 this month", "PC"], ["6", "Districts covered", "Prototype scope", "DS"], [String(RWANDA_ONLINE_MAP_LAYERS.length), "Rwanda online maps", "6 source families", "LY"], ["42", "NSDI datasets", "+3 indexed", "NS"],
-    [String(OFFICIAL_DOCUMENTS.length), "Official documents", "Searchable metadata", "DC"], ["Local", "AI runtime", "No provider key", "AI"], ["8", "GIS operations", "Turf geometry", "GA"], ["Live", "Open-stack health", "Runtime checks", "SH"],
+    [String(OFFICIAL_DOCUMENTS.length), "Official documents", "Searchable metadata", "DC"], ["Local", "AI runtime", "No provider key", "AI"], ["8", "GIS operations", "Turf geometry", "GA"], ["Ready", "Evidence engine", "Traceable outputs", "EV"],
   ];
   return <div className="dashboard-stack">
     <section className="metric-carousel" aria-label="Operational metrics"><Swiper className="metric-swiper" modules={[A11y, Keyboard, Pagination]} slidesPerView={1.18} spaceBetween={12} keyboard={{ enabled: true }} pagination={{ clickable: true }} breakpoints={{ 520: { slidesPerView: 2.15 }, 900: { slidesPerView: 3.15 }, 1260: { slidesPerView: 4 } }}>{metrics.map(([value, label, detail, mark]) => <SwiperSlide key={label}><motion.article className="metric-card" whileHover={reduceMotion ? undefined : { y: -6, rotateX: 2, rotateY: -1 }} transition={{ type: "spring", stiffness: 260, damping: 22 }}><div className="metric-top"><span className="metric-mark">{mark}</span><i>↗</i></div><strong>{value}</strong><h3>{label}</h3><p>{detail}</p></motion.article></SwiperSlide>)}</Swiper></section>
     <section className="quick-actions" aria-label="Workspace quick actions"><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("analysis")}><span><Workflow size={18} aria-hidden /></span><b>Run GIS analysis</b><small>Approved spatial operations</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("satellite")}><span><Satellite size={18} aria-hidden /></span><b>Monitor construction</b><small>Transparent change scoring</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("gnss")}><span><Orbit size={18} aria-hidden /></span><b>Open GNSS sky</b><small>Multi-constellation geometry</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("parcels")}><span><LandPlot size={18} aria-hidden /></span><b>Find a parcel</b><small>Search synthetic records</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("catalogue")}><span><Database size={18} aria-hidden /></span><b>Search NSDI</b><small>Discover available datasets</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => { notify("New parcel assessment draft created"); onNavigate("reports"); }}><span><FileText size={18} aria-hidden /></span><b>Create report</b><small>Traceable decision support</small></motion.button></section>
     <section className="dashboard-grid">
-      <article className="panel span-2"><PanelHeader title="AI activity" detail="Queries by department · last 7 days" action="View audit" onAction={() => onNavigate("audit")} /><div className="chart-wrap"><div className="bar-chart" aria-label="AI queries chart">{[38, 55, 42, 68, 54, 78, 64, 86, 71, 92, 76, 98].map((n, i) => <div key={i}><span style={{ height: `${n}%` }} /><small>{["GIS", "REG", "LU", "NSDI", "MGT", "SVY"][i % 6]}</small></div>)}</div><div className="chart-legend"><p><i className="dot-green" /> GIS <b>34%</b></p><p><i className="dot-amber" /> Land Use <b>27%</b></p><p><i className="dot-blue" /> Other <b>39%</b></p></div></div></article>
+      <article className="panel span-2"><PanelHeader title="AI activity" detail="Queries by department · last 7 days" action="Open assistant" onAction={() => onNavigate("assistant")} /><div className="chart-wrap"><div className="bar-chart" aria-label="AI queries chart">{[38, 55, 42, 68, 54, 78, 64, 86, 71, 92, 76, 98].map((n, i) => <div key={i}><span style={{ height: `${n}%` }} /><small>{["GIS", "REG", "LU", "NSDI", "MGT", "SVY"][i % 6]}</small></div>)}</div><div className="chart-legend"><p><i className="dot-green" /> GIS <b>34%</b></p><p><i className="dot-amber" /> Land Use <b>27%</b></p><p><i className="dot-blue" /> Other <b>39%</b></p></div></div></article>
       <article className="panel"><PanelHeader title="Parcel categories" detail="Synthetic dataset" /><div className="donut-row"><div className="donut"><div><b>128</b><span>parcels</span></div></div><div className="donut-legend"><p><i className="res" />Residential <b>39%</b></p><p><i className="agr" />Agriculture <b>28%</b></p><p><i className="mix" />Mixed use <b>18%</b></p><p><i className="oth" />Other <b>15%</b></p></div></div></article>
       <article className="panel span-2"><PanelHeader title="Recent GeoAI queries" detail="Answers grounded in connected prototype sources" action="Open assistant" onAction={() => onNavigate("assistant")} /><div className="activity-list"><Activity mark="AU" title="Agricultural parcels within 100 m of KN 5 Road" meta="Aline Uwase · GIS · 6 min ago" tag="37 parcels" /><Activity mark="JM" title="Documents discussing subdivision requirements" meta="Jean Mutesi · Registrar · 18 min ago" tag="2 sources" /><Activity mark="EN" title="Wetland overlap for parcel 1/02/03/04/0012" meta="Eric Niyonzima · Land Use · 34 min ago" tag="No overlap" /></div></article>
       <article className="panel"><PanelHeader title="System notices" detail="Items that may need attention" /><div className="notice-list"><div className="notice warning"><i>!</i><p><b>MUSN station latency</b><span>286 ms · increasing for 45 min</span></p></div><div className="notice info"><i>i</i><p><b>Catalogue refresh complete</b><span>3 metadata records updated</span></p></div><div className="notice good"><i>✓</i><p><b>Official document catalogue ready</b><span>{OFFICIAL_DOCUMENTS.length} publications · metadata search</span></p></div></div></article>
