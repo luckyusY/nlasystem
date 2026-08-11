@@ -6,7 +6,7 @@ import type { LayerGroup, Map as LeafletMap, TileLayer } from "leaflet";
 import type { GeoJsonObject } from "geojson";
 import { Box, Download, Eraser, Expand, LocateFixed, Map, MapPinned, MousePointer2, Ruler, ScanLine, Upload } from "lucide-react";
 import { parcels, type Parcel } from "@/lib/data";
-import { calculatePolygonArea, getReferenceLayers, KIGALI_CENTER_LATLNG, parcelCenterLatLng, parcelRingLatLng, RWANDA_BOUNDS } from "@/lib/geospatial-engine";
+import { calculatePolygonArea, getReferenceLayers, KIGALI_CENTER_LATLNG, parseRwandaCoordinate, parcelCenterLatLng, parcelRingLatLng, RWANDA_BOUNDS, toUtm36S } from "@/lib/geospatial-engine";
 import { buildArcGisExportUrl, findRwandaOnlineLayer, RWANDA_IMAGE_BOUNDS } from "@/lib/rwanda-map-catalog";
 
 const ThreeDMap = dynamic(() => import("@/components/three-d-map"), { ssr: false, loading: () => <div className="three-d-map-loading"><Box size={20} aria-hidden />Loading the 3D engine…</div> });
@@ -207,6 +207,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   const [osmFeatures, setOsmFeatures] = useState<OsmFeature[]>([]);
   const [placesLoading, setPlacesLoading] = useState(false);
   const [placesReload, setPlacesReload] = useState(0);
+  const [coordinateReadout, setCoordinateReadout] = useState<{ lat: number; lng: number } | null>(null);
   const shownParcels = useMemo(() => compact ? parcels.slice(0, 12) : parcels, [compact]);
   const highlightedSet = useMemo(() => new Set(highlightedUpis), [highlightedUpis]);
   const referenceLayers = useMemo(() => getReferenceLayers(), []);
@@ -391,6 +392,15 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   }, [compact, ready, referencePosition]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || compact) return;
+    const updateCoordinate = (event: { latlng: { lat: number; lng: number } }) => setCoordinateReadout({ lat: event.latlng.lat, lng: event.latlng.lng });
+    map.on("mousemove", updateCoordinate);
+    map.on("click", updateCoordinate);
+    return () => { map.off("mousemove", updateCoordinate); map.off("click", updateCoordinate); };
+  }, [compact, ready]);
+
+  useEffect(() => {
     const L = leafletRef.current;
     const map = mapRef.current;
     const group = drawingRef.current;
@@ -450,6 +460,20 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     event.preventDefault();
     const term = query.trim();
     if (term.length < 2) { setSearchError("Enter at least two characters."); return; }
+    const coordinate = parseRwandaCoordinate(term);
+    if (coordinate) {
+      const L = leafletRef.current;
+      const map = mapRef.current;
+      if (L && map) {
+        searchMarkerRef.current?.clearLayers();
+        L.circleMarker([coordinate.lat, coordinate.lng], { radius: 9, color: "#ffffff", weight: 3, fillColor: "#ffd400", fillOpacity: 1 }).bindPopup(popupContent(coordinate.label, "Coordinate search · Rwanda")).addTo(searchMarkerRef.current!).openPopup();
+        map.flyTo([coordinate.lat, coordinate.lng], 16, { duration: 0.65 });
+        setCoordinateReadout({ lat: coordinate.lat, lng: coordinate.lng });
+        setSearchResults([]); setSearchError("");
+        notifyRef.current?.(`${coordinate.label} located`);
+      }
+      return;
+    }
     const localMatch = parcels.find((parcel) => `${parcel.upi} ${parcel.district} ${parcel.sector} ${parcel.cell}`.toLowerCase().includes(term.toLowerCase()));
     if (localMatch) {
       onSelect?.(localMatch);
@@ -569,7 +593,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     {!compact && <>
       <div className="map-view-switcher" aria-label="Map dimension"><button className={viewMode === "2d" ? "active" : ""} onClick={() => setViewMode("2d")}><Map size={15} aria-hidden /><span>2D map</span></button><button className={viewMode === "3d" ? "active" : ""} onClick={() => setViewMode("3d")}><Box size={15} aria-hidden /><span>3D view</span></button></div>
       {viewMode === "2d" && <>
-        <form className="osm-search" onSubmit={searchMap}><span>⌕</span><input aria-label="Search parcels and OpenStreetMap places" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search parcel UPI or any place in Rwanda…" /><button disabled={searching}>{searching ? "…" : "Search"}</button></form>
+        <form className="osm-search" onSubmit={searchMap}><span>⌕</span><input aria-label="Search parcels, places or coordinates" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="UPI, place, lat/lon or UTM 36S…" /><button disabled={searching}>{searching ? "…" : "Search"}</button></form>
         {(searchResults.length > 0 || searchError) && <div className="osm-search-results">{searchError && <p>{searchError}</p>}{searchResults.map((result) => <button key={result.id} onClick={() => openSearchResult(result)}><span>OSM</span><b>{result.name}<small>{result.description}</small></b><i>›</i></button>)}</div>}
         <label className="osm-basemap-switcher"><span><Map size={14} aria-hidden /><i className={basemapStatus} /></span><select aria-label="Select map background" value={basemap} onChange={(event) => { const next = event.target.value as BasemapKey; setInternalBasemap(next); onBasemapChange?.(next); }} title={BASEMAPS[basemap].detail}>{(Object.keys(BASEMAPS) as BasemapKey[]).map((key) => <option key={key} value={key}>{BASEMAPS[key].shortLabel}</option>)}</select></label>
         <div className="osm-map-tools" aria-label="Open mapping tools">
@@ -586,6 +610,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
         <input ref={geoJsonInputRef} className="geojson-file-input" type="file" accept=".geojson,.json,application/geo+json,application/json" onChange={(event) => void importGeoJson(event)} />
         {visibleLayers?.osmPlaces && <button className="osm-refresh-places" onClick={() => setPlacesReload((value) => value + 1)} disabled={placesLoading}>{placesLoading ? "Loading open places…" : `Refresh OSM places · ${osmFeatures.length}`}</button>}
         {measurement && <div className="osm-measurement"><span>{activeTool === "distance" ? "Distance" : "Area"}</span><b>{measurement}</b><button onClick={() => { setActiveTool("select"); setMeasurement(""); }}>Done</button></div>}
+        {coordinateReadout && <div className="osm-coordinate-readout"><b>WGS84 {coordinateReadout.lat.toFixed(6)}, {coordinateReadout.lng.toFixed(6)}</b><span>UTM 36S {toUtm36S([coordinateReadout.lng, coordinateReadout.lat]).map((value) => value.toFixed(1)).join(" · ")}</span></div>}
         <div className="osm-map-status"><i />{BASEMAPS[basemap].label} · open data{onlineLayerIds.length ? ` · ${onlineLayerIds.length} Rwanda ${onlineLayerIds.length === 1 ? "layer" : "layers"}` : ""}{visibleLayers?.parcels ? " + synthetic parcels" : ""}{analysisFeatures ? " + analysis results" : ""}</div>
       </>}
     </>}

@@ -9,6 +9,8 @@ import { Swiper, SwiperSlide } from "swiper/react";
 import OpenStreetMap, { BASEMAPS, type BasemapKey, type MapLayerVisibility, type MapServiceStatus } from "@/components/open-street-map";
 import ChangeDetectionPage from "@/components/change-detection-page";
 import GnssSkyViewPage from "@/components/gnss-sky-view-page";
+import ParcelFieldTools from "@/components/parcel-field-tools";
+import AdvancedSpatialTools from "@/components/advanced-spatial-tools";
 import { auditEvents, corsStations, datasets, parcels, reports, roles, type Parcel } from "@/lib/data";
 import { analyzeParcels, type SpatialMetric } from "@/lib/geospatial-engine";
 import { inferLocalGeoIntent, warmLocalGeoAI, type LocalGeoAIResult } from "@/lib/local-geoai";
@@ -150,6 +152,27 @@ export default function GeoAIApp() {
   const [analysisMatches, setAnalysisMatches] = useState<string[]>([]);
   const [registryQuery, setRegistryQuery] = useState("");
   const [gnssObserver, setGnssObserver] = useState<ObserverKey>("kigali");
+  const [workspaceUrlReady, setWorkspaceUrlReady] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const requested = new URLSearchParams(window.location.search).get("page") as PageKey | null;
+      if (requested && requested in titles) setPage(requested);
+      setWorkspaceUrlReady(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") void navigator.serviceWorker.register("/sw.js");
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceUrlReady) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("page", page);
+    window.history.replaceState(null, "", url);
+  }, [page, workspaceUrlReady]);
 
   function navigate(key: PageKey) {
     setPage(key);
@@ -409,6 +432,34 @@ function MapPage({ notify, highlightedUpis, initialTab = "layers" }: { notify: (
   const [layerStatuses, setLayerStatuses] = useState<Record<string, MapServiceStatus>>({});
   const [catalogueQuery, setCatalogueQuery] = useState("");
   const [catalogueCategory, setCatalogueCategory] = useState<"All" | RwandaMapCategory>("All");
+  const [urlReady, setUrlReady] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const parcelUpi = params.get("parcel");
+      const sharedBasemap = params.get("basemap") as BasemapKey | null;
+      const sharedOnlineLayers = (params.get("layers") ?? "").split(",").filter((id) => RWANDA_ONLINE_MAP_LAYERS.some((layer) => layer.id === id)).slice(0, 4);
+      const sharedContext = new Set((params.get("context") ?? "").split(","));
+      if (parcelUpi) setSelected(parcels.find((parcel) => parcel.upi === parcelUpi));
+      if (sharedBasemap && sharedBasemap in BASEMAPS) setBasemap(sharedBasemap);
+      if (sharedOnlineLayers.length) setOnlineLayerIds(sharedOnlineLayers);
+      if (sharedContext.size > 1 || (sharedContext.size === 1 && !sharedContext.has(""))) setLayers({ parcels: sharedContext.has("parcels"), osmPlaces: sharedContext.has("places"), roads: sharedContext.has("roads"), wetlands: sharedContext.has("wetlands"), zoning: sharedContext.has("zoning"), boundaries: sharedContext.has("boundaries") });
+      setUrlReady(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!urlReady) return;
+    const url = new URL(window.location.href);
+    if (selected) url.searchParams.set("parcel", selected.upi); else url.searchParams.delete("parcel");
+    url.searchParams.set("basemap", basemap);
+    if (onlineLayerIds.length) url.searchParams.set("layers", onlineLayerIds.join(",")); else url.searchParams.delete("layers");
+    const context = [layers.parcels && "parcels", layers.osmPlaces && "places", layers.roads && "roads", layers.wetlands && "wetlands", layers.zoning && "zoning", layers.boundaries && "boundaries"].filter(Boolean).join(",");
+    url.searchParams.set("context", context);
+    window.history.replaceState(null, "", url);
+  }, [basemap, layers, onlineLayerIds, selected, urlReady]);
 
   const activeOnlineLayers = RWANDA_ONLINE_MAP_LAYERS.filter((layer) => onlineLayerIds.includes(layer.id));
   const filteredOnlineLayers = RWANDA_ONLINE_MAP_LAYERS.filter((layer) => {
@@ -459,7 +510,7 @@ function MapPage({ notify, highlightedUpis, initialTab = "layers" }: { notify: (
         {activeOnlineLayers.length > 0 && <div className="active-online-section"><div className="active-online-head"><p><b>Online map overlays</b><small>{activeOnlineLayers.length} of 4 active</small></p><button onClick={() => setMapTab("catalogue")}>Add maps</button></div>{activeOnlineLayers.map((layer) => { const status = displayLayerStatus(layer.id, layer.availability); return <div className="active-online-layer" key={layer.id}><i style={{ background: layer.accent }} /><p><b>{layer.shortTitle}</b><small>{layer.provider}<span className={`layer-live-state ${status.className}`}>{status.label}</span></small></p><button aria-label={`Remove ${layer.title}`} onClick={() => toggleOnlineLayer(layer.id)}>×</button></div>; })}<label className="layer-opacity"><span><SlidersHorizontal size={13} aria-hidden />Overlay opacity</span><b>{Math.round(onlineLayerOpacity * 100)}%</b><input aria-label="Online overlay opacity" type="range" min="25" max="100" value={Math.round(onlineLayerOpacity * 100)} onChange={(event) => setOnlineLayerOpacity(Number(event.target.value) / 100)} /></label></div>}
         {activeOnlineLayers.length === 0 && <button className="empty-online-layers" onClick={() => setMapTab("catalogue")}><Layers3 size={20} aria-hidden /><span><b>Add authoritative Rwanda maps</b><small>Browse {RWANDA_ONLINE_MAP_LAYERS.length} national, water, forest and risk layers</small></span><i>→</i></button>}
         <div className="layer-group"><h3>Live open data <span>−</span></h3><LayerToggle label="Live OSM places" sub="Schools · health · government · markets" checked={layers.osmPlaces} onChange={() => setLayers({ ...layers, osmPlaces: !layers.osmPlaces })} /><LayerToggle label="Analysis roads" sub="Shared Turf road-reference geometry" checked={layers.roads} onChange={() => setLayers({ ...layers, roads: !layers.roads })} /><LayerToggle label="Wetland references" sub="Shared Turf environmental geometry" checked={layers.wetlands} onChange={() => setLayers({ ...layers, wetlands: !layers.wetlands })} /></div><div className="layer-group"><h3>NLA demo context <span>−</span></h3><LayerToggle label="Prototype coverage" sub="Kigali demonstration boundary" checked={layers.boundaries} onChange={() => setLayers({ ...layers, boundaries: !layers.boundaries })} /><LayerToggle label="Synthetic cadastral parcels" sub="128 non-sensitive demonstration records" checked={layers.parcels} onChange={() => setLayers({ ...layers, parcels: !layers.parcels })} /><LayerToggle label="Demo planning zone" sub="Illustrative classification only" checked={layers.zoning} onChange={() => setLayers({ ...layers, zoning: !layers.zoning })} /></div>
-        {selected && <div className="selected-card"><div className="selected-head"><span>Selected parcel</span><button onClick={() => setSelected(undefined)}>×</button></div><h3>{selected.upi}</h3><dl><div><dt>District</dt><dd>{selected.district}</dd></div><div><dt>Sector</dt><dd>{selected.sector}</dd></div><div><dt>Area</dt><dd>{selected.area.toLocaleString()} m²</dd></div><div><dt>Land use</dt><dd>{selected.landUse}</dd></div><div><dt>Zoning</dt><dd>{selected.zoning}</dd></div><div><dt>Status</dt><dd><i />{selected.status}</dd></div></dl><button className="primary-button full" onClick={() => notify(`Parcel ${selected.upi} added to the analysis workspace`)}>Analyse parcel</button></div>}
+        {selected && <div className="selected-card"><div className="selected-head"><span>Selected parcel</span><button onClick={() => setSelected(undefined)}>×</button></div><h3>{selected.upi}</h3><dl><div><dt>District</dt><dd>{selected.district}</dd></div><div><dt>Sector</dt><dd>{selected.sector}</dd></div><div><dt>Area</dt><dd>{selected.area.toLocaleString()} m²</dd></div><div><dt>Land use</dt><dd>{selected.landUse}</dd></div><div><dt>Zoning</dt><dd>{selected.zoning}</dd></div><div><dt>Status</dt><dd><i />{selected.status}</dd></div></dl><button className="primary-button full" onClick={() => notify(`Parcel ${selected.upi} added to the analysis workspace`)}>Analyse parcel</button><ParcelFieldTools parcel={selected} notify={notify} onShare={() => { void navigator.clipboard?.writeText(window.location.href); notify("Shareable map workspace link copied"); }} /></div>}
       </> : mapTab === "catalogue" ? <div className="rwanda-map-catalogue">
         <div className="catalogue-intro"><span><Layers3 size={18} aria-hidden /></span><p><b>Rwanda online map library</b><small>Choose a ready-made map stack or combine live services yourself.</small></p></div>
         <div className="catalogue-health"><span><CheckCircle2 size={16} aria-hidden /></span><p><b>{RWANDA_VERIFIED_MAP_LAYERS.length} services verified live</b><small>{RWANDA_DEGRADED_MAP_LAYERS.length} intermittent sources remain visible with warnings</small></p></div>
@@ -570,11 +621,11 @@ function AnalysisPage({ onOpenMap, notify }: { onOpenMap: (matches: Parcel[]) =>
   const context = operation.source === "road" ? `${operation.parameterLabel.toLowerCase()} ${parameter} ${operation.parameterUnit} from ${road}` : operation.source === "wetland" ? `within ${parameter} metres of the synthetic wetland reference` : operation.source === "intersection" ? `within ${parameter} metres of both road and wetland references` : operation.source === "area" ? `with area of at least ${parameter.toLocaleString()} m²` : `matching the selected land and zoning attributes`;
   const OperationIcon = operation.icon;
 
-  return <div className="analysis-layout"><aside className="analysis-menu"><p>Analysis operations</p>{ANALYSIS_OPERATIONS.map((item) => { const Icon = item.icon; return <button key={item.name} className={operation.name === item.name ? "active" : ""} onClick={() => chooseOperation(item)}><span><Icon size={14} strokeWidth={1.9} aria-hidden /></span>{item.name}</button>; })}</aside><section className="analysis-content"><form className="panel analysis-form" onSubmit={run}><div className="operation-title"><span><OperationIcon size={19} aria-hidden /></span><div><p>Open geospatial engine</p><h2>{operation.name}</h2></div><em>Turf · {operation.functionName}</em></div><div className="form-grid">{(operation.source === "road" || operation.source === "intersection") && <label>Select road<select value={road} onChange={(event) => setRoad(event.target.value)}><option>KN 5 Road</option><option>KK 15 Road</option><option>NR 4 Corridor</option></select></label>}<label>{operation.parameterLabel}<div className="input-suffix"><input aria-label={operation.parameterLabel} type="number" min="0" max={operation.source === "area" || operation.source === "attribute" ? 10000 : 2500} value={parameter} onChange={(event) => setParameter(Number(event.target.value))} /><span>{operation.parameterUnit}</span></div></label><label>Land use<select value={landUse} onChange={(event) => setLandUse(event.target.value as typeof landUse)}><option>All categories</option><option>Agriculture</option><option>Residential</option><option>Commercial</option><option>Mixed Use</option><option>Conservation</option></select></label><label>District<select value={district} onChange={(event) => setDistrict(event.target.value)}><option>All districts</option><option>Gasabo</option><option>Kicukiro</option><option>Nyarugenge</option><option>Musanze</option><option>Huye</option><option>Bugesera</option></select></label><label>Zoning<select value={zoning} onChange={(event) => setZoning(event.target.value)}><option>All zones</option><option>R1</option><option>R2</option><option>R3</option><option>C1</option><option>AG</option><option>OS</option></select></label></div><div className="safe-query"><span><ShieldCheck size={17} aria-hidden /></span><p><b>Controlled spatial operation</b><small>Turf.js runs buffer, intersection, nearest-line and geodesic-area calculations on shared GeoJSON. <code>{operation.functionName}</code> names the production PostGIS equivalent; no SQL is generated or executed.</small></p></div><button className="primary-button run-button" type="submit" disabled={running}>{running ? <><LoaderCircle className="spin" size={16} aria-hidden />Running analysis…</> : <><Play size={16} fill="currentColor" aria-hidden />Run analysis</>}</button></form>
+  return <><div className="analysis-layout"><aside className="analysis-menu"><p>Analysis operations</p>{ANALYSIS_OPERATIONS.map((item) => { const Icon = item.icon; return <button key={item.name} className={operation.name === item.name ? "active" : ""} onClick={() => chooseOperation(item)}><span><Icon size={14} strokeWidth={1.9} aria-hidden /></span>{item.name}</button>; })}</aside><section className="analysis-content"><form className="panel analysis-form" onSubmit={run}><div className="operation-title"><span><OperationIcon size={19} aria-hidden /></span><div><p>Open geospatial engine</p><h2>{operation.name}</h2></div><em>Turf · {operation.functionName}</em></div><div className="form-grid">{(operation.source === "road" || operation.source === "intersection") && <label>Select road<select value={road} onChange={(event) => setRoad(event.target.value)}><option>KN 5 Road</option><option>KK 15 Road</option><option>NR 4 Corridor</option></select></label>}<label>{operation.parameterLabel}<div className="input-suffix"><input aria-label={operation.parameterLabel} type="number" min="0" max={operation.source === "area" || operation.source === "attribute" ? 10000 : 2500} value={parameter} onChange={(event) => setParameter(Number(event.target.value))} /><span>{operation.parameterUnit}</span></div></label><label>Land use<select value={landUse} onChange={(event) => setLandUse(event.target.value as typeof landUse)}><option>All categories</option><option>Agriculture</option><option>Residential</option><option>Commercial</option><option>Mixed Use</option><option>Conservation</option></select></label><label>District<select value={district} onChange={(event) => setDistrict(event.target.value)}><option>All districts</option><option>Gasabo</option><option>Kicukiro</option><option>Nyarugenge</option><option>Musanze</option><option>Huye</option><option>Bugesera</option></select></label><label>Zoning<select value={zoning} onChange={(event) => setZoning(event.target.value)}><option>All zones</option><option>R1</option><option>R2</option><option>R3</option><option>C1</option><option>AG</option><option>OS</option></select></label></div><div className="safe-query"><span><ShieldCheck size={17} aria-hidden /></span><p><b>Controlled spatial operation</b><small>Turf.js runs buffer, intersection, nearest-line and geodesic-area calculations on shared GeoJSON. <code>{operation.functionName}</code> names the production PostGIS equivalent; no SQL is generated or executed.</small></p></div><button className="primary-button run-button" type="submit" disabled={running}>{running ? <><LoaderCircle className="spin" size={16} aria-hidden />Running analysis…</> : <><Play size={16} fill="currentColor" aria-hidden />Run analysis</>}</button></form>
       {!complete && !running && <div className="analysis-empty"><span><Boxes size={29} aria-hidden /></span><h2>Configure and run the workflow</h2><p>Results are calculated from shared GeoJSON parcel, road and wetland geometry—not stored distance labels.</p><small>Turf.js geodesic operations · WGS84 · Proj4 UTM 36S output</small></div>}
       {running && <div className="analysis-empty running"><span><LoaderCircle className="spin" size={29} aria-hidden /></span><h2>Processing real geometry</h2><p>Applying Turf.js {operation.functionName} equivalent logic to the demonstration GeoJSON.</p></div>}
       {complete && <div className="analysis-results fresh"><div className="results-head"><div><span>Completed · Turf.js · EPSG:4326 → EPSG:32736</span><h2>{matches.length} {matches.length === 1 ? "parcel" : "parcels"} matched</h2><p>{operation.name}: {context} in {district === "All districts" ? "all demonstration districts" : district}.</p></div><div><button onClick={() => onOpenMap(matches)} disabled={!matches.length}><MapIcon size={14} aria-hidden />View map</button><button onClick={() => { downloadAnalysisCsv(matches, operation.name, metrics); notify("Analysis CSV downloaded with geometry metrics"); }} disabled={!matches.length}><Download size={14} aria-hidden />Export CSV</button></div></div><div className="impact-grid"><div><span>Geodesic matched area</span><b>{(totalArea / 10_000).toFixed(2)} ha</b><small>Across {matches.length} GeoJSON parcels</small></div><div className="high"><span>High priority</span><b>{high}</b><small>Closest or largest matches</small></div><div className="medium"><span>Medium priority</span><b>{medium}</b><small>Middle analysis band</small></div><div className="low"><span>Low priority</span><b>{low}</b><small>Remaining matches</small></div></div><div className="result-map-row"><div className="result-map"><ParcelMap compact selected={matches[0]} highlightedUpis={matches.map((parcel) => parcel.upi)} /><div className="result-upis">{matches.slice(0, 4).map((parcel) => <span key={parcel.upi}>{parcel.upi}</span>)}{matches.length > 4 && <em>+{matches.length - 4} more</em>}</div></div><div className="ai-summary"><span><Sparkles size={14} aria-hidden />NLA GeoAI summary</span><p>{matches.length ? `${matches.length} synthetic parcel geometries match this ${operation.name.toLowerCase()}, covering ${(totalArea / 10_000).toFixed(2)} geodesic hectares. The largest concentration is in ${dominantSector} Sector.` : `No synthetic parcel geometry matched the current ${operation.name.toLowerCase()} settings. Increase the distance or broaden the attribute filters and run it again.`}</p><div><b>Recommended next action</b><p>An authorized GIS or Land Use officer should verify source geometry and current official records before administrative use.</p></div><button disabled={!matches.length} onClick={() => { downloadSimplePdf(`${operation.name} Report`, `NLA-GEO-${Date.now().toString().slice(-6)}`); notify("GIS analysis PDF downloaded"); }}><FileDown size={14} aria-hidden />Generate PDF report</button></div></div></div>}
-    </section></div>;
+    </section></div><AdvancedSpatialTools notify={notify} /></>;
 }
 
 function CataloguePage({ notify }: { notify: (s: string) => void }) {

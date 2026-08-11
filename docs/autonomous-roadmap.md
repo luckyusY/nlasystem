@@ -60,8 +60,8 @@ This roadmap turns the demonstration into a useful, map-first geospatial prototy
 - [x] **042 — Add per-satellite signal strength.** C/N0-style demonstration values are displayed and quality-coded.
 - [x] **043 — Add multi-constellation comparison.** Users can compare geometry from one constellation versus all selected systems.
 - [x] **044 — Add satellite detail inspection.** Selecting a sky-plot marker reveals PRN, elevation, azimuth, signal and use state.
-- [ ] **045 — Add obstruction-mask simulation.** A skyline mask shows how buildings or hills degrade geometry.
-- [ ] **046 — Add spoofing/jamming education.** The page explains anomalies without claiming receiver-level detection.
+- [x] **045 — Add obstruction-mask simulation.** A skyline mask shows how buildings or hills degrade geometry.
+- [x] **046 — Add spoofing/jamming education.** The page explains anomalies without claiming receiver-level detection.
 - [x] **047 — Add GNSS observation CSV export.** The current epoch, controls and per-satellite observations download locally.
 - [x] **048 — Add GNSS sky-plot image export.** A clean PNG or SVG export preserves legend and simulation label.
 - [x] **049 — Connect GNSS to CORS monitoring.** A station card opens its matching sky/quality view.
@@ -69,16 +69,16 @@ This roadmap turns the demonstration into a useful, map-first geospatial prototy
 
 ## F. Parcel and field workflows
 
-- [ ] **051 — Add map-first parcel selection.** Selecting a parcel opens essential identity, area and land-use details without leaving the map.
-- [ ] **052 — Add shareable workspace state.** Page, basemap, selected layers and selected parcel can be encoded in the URL.
-- [ ] **053 — Add coordinate search.** Latitude/longitude and UTM zone 36S coordinates can locate the map.
-- [ ] **054 — Add coordinate readout.** Pointer/tap location reports WGS84 and EPSG:32736 values.
-- [ ] **055 — Add parcel-neighbour analysis.** Touching and nearby demonstration parcels can be enumerated.
-- [ ] **056 — Add parcel split sketching.** A local-only sketch estimates proposed child areas without changing records.
-- [ ] **057 — Add route-to-parcel.** A browser geolocation point can open an external directions link to the parcel vicinity.
-- [ ] **058 — Add field checklist mode.** Officers can record local visit notes, photo placeholders and verification state.
-- [ ] **059 — Add offline-ready field shell.** Core UI and bundled demo data remain understandable during a temporary network loss.
-- [ ] **060 — Add a clear authority boundary.** Every parcel workflow states that no legal record is created or modified.
+- [x] **051 — Add map-first parcel selection.** Selecting a parcel opens essential identity, area and land-use details without leaving the map.
+- [x] **052 — Add shareable workspace state.** Page, basemap, selected layers and selected parcel can be encoded in the URL.
+- [x] **053 — Add coordinate search.** Latitude/longitude and UTM zone 36S coordinates can locate the map.
+- [x] **054 — Add coordinate readout.** Pointer/tap location reports WGS84 and EPSG:32736 values.
+- [x] **055 — Add parcel-neighbour analysis.** Touching and nearby demonstration parcels can be enumerated.
+- [x] **056 — Add parcel split sketching.** A local-only sketch estimates proposed child areas without changing records.
+- [x] **057 — Add route-to-parcel.** A browser geolocation point can open an external directions link to the parcel vicinity.
+- [x] **058 — Add field checklist mode.** Officers can record local visit notes, photo placeholders and verification state.
+- [x] **059 — Add offline-ready field shell.** Core UI and bundled demo data remain understandable during a temporary network loss.
+- [x] **060 — Add a clear authority boundary.** Every parcel workflow states that no legal record is created or modified.
 
 ## G. Spatial analysis toolkit
 
@@ -86,12 +86,12 @@ This roadmap turns the demonstration into a useful, map-first geospatial prototy
 - [x] **062 — Run real intersections.** Turf.js tests parcel, road and wetland geometry instead of stored overlap flags.
 - [x] **063 — Calculate geodesic area.** Parcel/result areas are computed from geometry.
 - [x] **064 — Transform to Rwanda UTM.** Proj4js exposes EPSG:32736 centroids for technical review.
-- [ ] **065 — Add point-in-polygon analysis.** User-entered coordinates can be screened against visible local polygons.
-- [ ] **066 — Add nearest-feature analysis.** The map identifies the closest road, wetland and selected service point.
-- [ ] **067 — Add dissolve and union.** Selected demonstration parcels can be merged into a summary geometry.
-- [ ] **068 — Add convex-hull and envelope tools.** A set of points/parcels can produce an inspectable boundary estimate.
-- [ ] **069 — Add slope-risk explanation.** Terrain layers and thresholds are presented as screening, not a survey result.
-- [ ] **070 — Add reusable analysis history.** Recent local analyses can be reopened and exported in the same session.
+- [x] **065 — Add point-in-polygon analysis.** User-entered coordinates can be screened against visible local polygons.
+- [x] **066 — Add nearest-feature analysis.** The map identifies the closest road, wetland and selected service point.
+- [x] **067 — Add dissolve and union.** Selected demonstration parcels can be merged into a summary geometry.
+- [x] **068 — Add convex-hull and envelope tools.** A set of points/parcels can produce an inspectable boundary estimate.
+- [x] **069 — Add slope-risk explanation.** Terrain layers and thresholds are presented as screening, not a survey result.
+- [x] **070 — Add reusable analysis history.** Recent local analyses can be reopened and exported in the same session.
 
 ## H. Open data, documents and provenance
 
@@ -103,7 +103,7 @@ This roadmap turns the demonstration into a useful, map-first geospatial prototy
 - [ ] **076 — Add WMS capabilities inspection.** A service can show supported layers, CRS, bounds and formats.
 - [ ] **077 — Add ArcGIS service metadata inspection.** Layer fields, extent, copyright and supported operations are visible.
 - [ ] **078 — Add document link checking.** Broken official PDF/source links are reported in System Health.
-- [ ] **079 — Add evidence bundles.** Analysis exports include machine-readable source identifiers and retrieval timestamps.
+- [x] **079 — Add evidence bundles.** Analysis exports include machine-readable source identifiers and retrieval timestamps.
 - [ ] **080 — Add a provenance policy page.** The product explains authoritative, public, community and synthetic source classes.
 
 ## I. NLA GeoAI, usability and accessibility

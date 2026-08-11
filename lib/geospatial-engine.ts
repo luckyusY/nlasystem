@@ -117,6 +117,27 @@ export function toUtm36S([lng, lat]: [number, number]): [number, number] {
   return [easting, northing];
 }
 
+export function fromUtm36S([easting, northing]: [number, number]): [number, number] {
+  const [lng, lat] = proj4("EPSG:32736", "EPSG:4326", [easting, northing]);
+  return [lng, lat];
+}
+
+export function parseRwandaCoordinate(input: string): { lat: number; lng: number; label: string } | null {
+  const numbers = input.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+  if (numbers.length < 2) return null;
+  const mentionsUtm = /\b(utm|32736|36s|easting|northing)\b/i.test(input);
+  if (mentionsUtm || (numbers[0] > 1000 && numbers[1] > 1_000_000)) {
+    const [lng, lat] = fromUtm36S([numbers[numbers.length - 2], numbers[numbers.length - 1]]);
+    if (lat >= RWANDA_BOUNDS[0][0] && lat <= RWANDA_BOUNDS[1][0] && lng >= RWANDA_BOUNDS[0][1] && lng <= RWANDA_BOUNDS[1][1]) return { lat, lng, label: `UTM 36S ${numbers[numbers.length - 2].toFixed(0)} E, ${numbers[numbers.length - 1].toFixed(0)} N` };
+    return null;
+  }
+  const [first, second] = numbers;
+  const lat = first >= -3 && first <= -1 ? first : second;
+  const lng = first >= 28 && first <= 31 ? first : second;
+  if (lat >= RWANDA_BOUNDS[0][0] && lat <= RWANDA_BOUNDS[1][0] && lng >= RWANDA_BOUNDS[0][1] && lng <= RWANDA_BOUNDS[1][1]) return { lat, lng, label: `WGS84 ${lat.toFixed(6)}, ${lng.toFixed(6)}` };
+  return null;
+}
+
 export function calculatePolygonArea(points: { lat: number; lng: number }[]) {
   if (points.length < 3) return 0;
   const ring = points.map(({ lat, lng }) => [lng, lat] as Position);
