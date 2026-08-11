@@ -5,7 +5,7 @@ import Lenis from "lenis";
 
 export default function SmoothScroll() {
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce), (max-width: 900px)").matches) return;
 
     const lenis = new Lenis({
       autoRaf: true,
@@ -16,7 +16,13 @@ export default function SmoothScroll() {
       wheelMultiplier: 0.9,
     });
 
-    return () => lenis.destroy();
+    const resetWorkspaceScroll = () => lenis.scrollTo(0, { immediate: true, force: true });
+    window.addEventListener("nla:navigate", resetWorkspaceScroll);
+
+    return () => {
+      window.removeEventListener("nla:navigate", resetWorkspaceScroll);
+      lenis.destroy();
+    };
   }, []);
 
   return null;

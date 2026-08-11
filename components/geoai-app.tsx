@@ -140,8 +140,23 @@ export default function GeoAIApp() {
   function navigate(key: PageKey) {
     setPage(key);
     setSidebarOpen(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  useEffect(() => {
+    const resetWorkspaceScroll = () => {
+      window.dispatchEvent(new Event("nla:navigate"));
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+    resetWorkspaceScroll();
+    const frame = window.requestAnimationFrame(resetWorkspaceScroll);
+    const timer = window.setTimeout(resetWorkspaceScroll, 80);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [page]);
 
   function notify(message: string) {
     setToast(message);
@@ -150,6 +165,7 @@ export default function GeoAIApp() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#workspace-main">Skip to workspace</a>
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
         <div className="brand-block">
           <Image className="nla-brand-logo" src="/nla-logo.png" alt="National Land Authority" width={1043} height={541} priority />
@@ -162,7 +178,7 @@ export default function GeoAIApp() {
             <div className="nav-group" key={group.label}>
               <p>{group.label}</p>
               {group.items.map((item) => { const Icon = PAGE_ICONS[item.key]; return (
-                <motion.button key={item.key} className={page === item.key ? "active" : ""} onClick={() => navigate(item.key)} whileHover={reduceMotion ? undefined : { x: 4 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
+                <motion.button key={item.key} className={page === item.key ? "active" : ""} aria-current={page === item.key ? "page" : undefined} onClick={() => navigate(item.key)} whileHover={reduceMotion ? undefined : { x: 4 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
                   <span className="nav-mark"><Icon size={16} strokeWidth={1.9} aria-hidden /></span>{item.label}{page === item.key && <motion.i layoutId="active-navigation-rail" />}
                 </motion.button>
               ); })}
@@ -178,7 +194,7 @@ export default function GeoAIApp() {
 
       <AnimatePresence>{sidebarOpen && <motion.button className="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} aria-label="Close navigation overlay" />}</AnimatePresence>
 
-      <main className="main-area">
+      <main className="main-area" id="workspace-main">
         <header className="topbar">
           <button className="menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Menu size={21} aria-hidden /></button>
           <Image className="mobile-brand-logo" src="/nla-logo.png" alt="National Land Authority" width={1043} height={541} priority />
@@ -189,7 +205,7 @@ export default function GeoAIApp() {
             <button className="icon-button" onClick={() => setNoticeOpen(!noticeOpen)} aria-label="Notifications"><Bell size={17} aria-hidden /><i>3</i></button>
             <div className="header-user"><span>AU</span><div><b>Aline Uwase</b><small>GIS Department · GIS Officer</small></div></div>
           </div>
-          <AnimatePresence>{noticeOpen && <motion.div className="notification-popover" initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8, rotateX: -7 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, rotateX: -5 }} transition={{ duration: 0.18 }}><strong>Notifications</strong><p><b>Road layer refreshed</b><span>NSDI metadata · 8 min ago</span></p><p><b>MUSN latency warning</b><span>CORS monitoring · 24 min ago</span></p><p><b>Report ready for review</b><span>NLA-GEO-2026-084 · 1 hr ago</span></p></motion.div>}</AnimatePresence>
+          <AnimatePresence>{noticeOpen && <motion.div className="notification-popover" role="status" aria-label="Workspace notifications" initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8, rotateX: -7 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, rotateX: -5 }} transition={{ duration: 0.18 }}><strong>Notifications</strong><p><b>Road layer refreshed</b><span>NSDI metadata · 8 min ago</span></p><p><b>MUSN latency warning</b><span>CORS monitoring · 24 min ago</span></p><p><b>Report ready for review</b><span>NLA-GEO-2026-084 · 1 hr ago</span></p></motion.div>}</AnimatePresence>
         </header>
 
         <div className="content-wrap">
@@ -220,8 +236,8 @@ export default function GeoAIApp() {
         <button className={page === "parcels" ? "active" : ""} onClick={() => navigate("parcels")}><span><LandPlot size={17} aria-hidden /></span><small>Parcels</small></button>
         <button onClick={() => setSidebarOpen(true)}><span><MoreHorizontal size={18} aria-hidden /></span><small>More</small></button>
       </nav>
-      <GeoAISupportBubble onNavigate={navigate} />
-      <AnimatePresence>{toast && <motion.div className="toast" initial={{ opacity: 0, y: 14, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.98 }}><span><ShieldCheck size={15} aria-hidden /></span>{toast}</motion.div>}</AnimatePresence>
+      {page !== "assistant" && <GeoAISupportBubble onNavigate={navigate} />}
+      <AnimatePresence>{toast && <motion.div className="toast" role="status" aria-live="polite" initial={{ opacity: 0, y: 14, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.98 }}><span><ShieldCheck size={15} aria-hidden /></span>{toast}</motion.div>}</AnimatePresence>
     </div>
   );
 }
@@ -259,7 +275,8 @@ function GeoAISupportBubble({ onNavigate }: { onNavigate: (page: PageKey) => voi
 
 function PageIntro({ page, onAsk }: { page: PageKey; onAsk: () => void }) {
   const info = titles[page];
-  return <section className="page-intro"><div><p>{info.eyebrow}</p><h1>{info.title}</h1><span>{info.subtitle}</span></div>{page !== "assistant" && <button className="primary-button" onClick={onAsk}><Sparkles size={15} aria-hidden /> Ask NLA GeoAI</button>}</section>;
+  const PageIcon = PAGE_ICONS[page];
+  return <section className="page-intro"><div><p><PageIcon size={14} aria-hidden />{info.eyebrow}</p><h1>{info.title}</h1><span>{info.subtitle}</span></div>{page !== "assistant" && <button className="primary-button" onClick={onAsk}><Sparkles size={15} aria-hidden /> Ask NLA GeoAI</button>}</section>;
 }
 
 function Dashboard({ onNavigate, notify }: { onNavigate: (p: PageKey) => void; notify: (s: string) => void }) {
@@ -270,13 +287,13 @@ function Dashboard({ onNavigate, notify }: { onNavigate: (p: PageKey) => void; n
   ];
   return <div className="dashboard-stack">
     <section className="metric-carousel" aria-label="Operational metrics"><Swiper className="metric-swiper" modules={[A11y, Keyboard, Pagination]} slidesPerView={1.18} spaceBetween={12} keyboard={{ enabled: true }} pagination={{ clickable: true }} breakpoints={{ 520: { slidesPerView: 2.15 }, 900: { slidesPerView: 3.15 }, 1260: { slidesPerView: 4 } }}>{metrics.map(([value, label, detail, mark]) => <SwiperSlide key={label}><motion.article className="metric-card" whileHover={reduceMotion ? undefined : { y: -6, rotateX: 2, rotateY: -1 }} transition={{ type: "spring", stiffness: 260, damping: 22 }}><div className="metric-top"><span className="metric-mark">{mark}</span><i>↗</i></div><strong>{value}</strong><h3>{label}</h3><p>{detail}</p></motion.article></SwiperSlide>)}</Swiper></section>
+    <section className="quick-actions" aria-label="Workspace quick actions"><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("analysis")}><span><Workflow size={18} aria-hidden /></span><b>Run GIS analysis</b><small>Approved spatial operations</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("parcels")}><span><LandPlot size={18} aria-hidden /></span><b>Find a parcel</b><small>Search synthetic records</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("catalogue")}><span><Database size={18} aria-hidden /></span><b>Search NSDI</b><small>Discover available datasets</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => { notify("New parcel assessment draft created"); onNavigate("reports"); }}><span><FileText size={18} aria-hidden /></span><b>Create report</b><small>Traceable decision support</small></motion.button></section>
     <section className="dashboard-grid">
       <article className="panel span-2"><PanelHeader title="AI activity" detail="Queries by department · last 7 days" action="View audit" onAction={() => onNavigate("audit")} /><div className="chart-wrap"><div className="bar-chart" aria-label="AI queries chart">{[38, 55, 42, 68, 54, 78, 64, 86, 71, 92, 76, 98].map((n, i) => <div key={i}><span style={{ height: `${n}%` }} /><small>{["GIS", "REG", "LU", "NSDI", "MGT", "SVY"][i % 6]}</small></div>)}</div><div className="chart-legend"><p><i className="dot-green" /> GIS <b>34%</b></p><p><i className="dot-amber" /> Land Use <b>27%</b></p><p><i className="dot-blue" /> Other <b>39%</b></p></div></div></article>
       <article className="panel"><PanelHeader title="Parcel categories" detail="Synthetic dataset" /><div className="donut-row"><div className="donut"><div><b>128</b><span>parcels</span></div></div><div className="donut-legend"><p><i className="res" />Residential <b>39%</b></p><p><i className="agr" />Agriculture <b>28%</b></p><p><i className="mix" />Mixed use <b>18%</b></p><p><i className="oth" />Other <b>15%</b></p></div></div></article>
       <article className="panel span-2"><PanelHeader title="Recent GeoAI queries" detail="Answers grounded in connected prototype sources" action="Open assistant" onAction={() => onNavigate("assistant")} /><div className="activity-list"><Activity mark="AU" title="Agricultural parcels within 100 m of KN 5 Road" meta="Aline Uwase · GIS · 6 min ago" tag="37 parcels" /><Activity mark="JM" title="Documents discussing subdivision requirements" meta="Jean Mutesi · Registrar · 18 min ago" tag="2 sources" /><Activity mark="EN" title="Wetland overlap for parcel 1/02/03/04/0012" meta="Eric Niyonzima · Land Use · 34 min ago" tag="No overlap" /></div></article>
       <article className="panel"><PanelHeader title="System notices" detail="Items that may need attention" /><div className="notice-list"><div className="notice warning"><i>!</i><p><b>MUSN station latency</b><span>286 ms · increasing for 45 min</span></p></div><div className="notice info"><i>i</i><p><b>Catalogue refresh complete</b><span>3 metadata records updated</span></p></div><div className="notice good"><i>✓</i><p><b>Official document catalogue ready</b><span>{OFFICIAL_DOCUMENTS.length} publications · metadata search</span></p></div></div></article>
     </section>
-    <section className="quick-actions"><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("analysis")}><span><Workflow size={18} aria-hidden /></span><b>Run GIS analysis</b><small>Approved spatial operations</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("parcels")}><span><LandPlot size={18} aria-hidden /></span><b>Find a parcel</b><small>Search synthetic records</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => onNavigate("catalogue")}><span><Database size={18} aria-hidden /></span><b>Search NSDI</b><small>Discover available datasets</small></motion.button><motion.button whileHover={reduceMotion ? undefined : { y: -4, rotateX: 2 }} whileTap={{ scale: 0.98 }} onClick={() => { notify("New parcel assessment draft created"); onNavigate("reports"); }}><span><FileText size={18} aria-hidden /></span><b>Create report</b><small>Traceable decision support</small></motion.button></section>
   </div>;
 }
 
