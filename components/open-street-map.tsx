@@ -33,6 +33,10 @@ type OpenStreetMapProps = {
   basemap?: BasemapKey;
   onBasemapChange?: (basemap: BasemapKey) => void;
   onLayerStatusChange?: (id: string, status: MapServiceStatus) => void;
+  analysisFeatures?: GeoJsonObject;
+  analysisLabelProperty?: string;
+  analysisColour?: string;
+  referencePosition?: { lat: number; lon: number; label: string };
 };
 
 export type BasemapKey = "street" | "humanitarian" | "topographic" | "light" | "dark" | "satellite";
@@ -173,7 +177,7 @@ out center tags 80;`;
   return normalizeOverpassFeatures(data.elements ?? []);
 }
 
-export default function OpenStreetMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis = [], onlineLayerIds = [], onlineLayerOpacity = 1, basemap: controlledBasemap, onBasemapChange, onLayerStatusChange }: OpenStreetMapProps) {
+export default function OpenStreetMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis = [], onlineLayerIds = [], onlineLayerOpacity = 1, basemap: controlledBasemap, onBasemapChange, onLayerStatusChange, analysisFeatures, analysisLabelProperty = "id", analysisColour = "#d55d30", referencePosition }: OpenStreetMapProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -184,6 +188,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   const importedLayerRef = useRef<LayerGroup | null>(null);
   const onlineLayersRef = useRef<LayerGroup | null>(null);
   const lastOnlineLayerSetRef = useRef("");
+  const lastAnalysisFeaturesRef = useRef<GeoJsonObject | undefined>(undefined);
   const geoJsonInputRef = useRef<HTMLInputElement>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const notifyRef = useRef(onNotify);
@@ -349,7 +354,28 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
         marker.addTo(overlays);
       });
     }
-  }, [highlightedSet, onSelect, osmFeatures, ready, referenceLayers, selected, shownParcels, visibleLayers]);
+    if (analysisFeatures) {
+      const analysisLayer = L.geoJSON(analysisFeatures, {
+        style: { color: analysisColour, weight: 3, fillColor: analysisColour, fillOpacity: 0.5, dashArray: "4 3" },
+        onEachFeature: (feature, layer) => {
+          const properties = feature.properties as Record<string, unknown> | null;
+          const label = properties?.[analysisLabelProperty] ?? properties?.id ?? "Analysis feature";
+          const detail = properties?.score ? `Score ${properties.score} · ${properties.areaM2 ?? "—"} m²` : "Browser-side analysis result";
+          layer.bindTooltip(popupContent(String(label), detail), { sticky: true, direction: "top" });
+        },
+      }).addTo(overlays);
+      if (lastAnalysisFeaturesRef.current !== analysisFeatures) {
+        const bounds = analysisLayer.getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds, { padding: [36, 36], maxZoom: 16 });
+        lastAnalysisFeaturesRef.current = analysisFeatures;
+      }
+    }
+    if (referencePosition) {
+      L.circleMarker([referencePosition.lat, referencePosition.lon], { radius: 9, color: "#ffffff", weight: 3, fillColor: "#1f9fd1", fillOpacity: 1 })
+        .bindTooltip(popupContent(referencePosition.label, `${referencePosition.lat.toFixed(5)}, ${referencePosition.lon.toFixed(5)}`), { permanent: compact, direction: "top" })
+        .addTo(overlays);
+    }
+  }, [analysisColour, analysisFeatures, analysisLabelProperty, compact, highlightedSet, onSelect, osmFeatures, ready, referenceLayers, referencePosition, selected, shownParcels, visibleLayers]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -357,6 +383,12 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     const index = parcels.findIndex((parcel) => parcel.upi === selected.upi);
     if (index >= 0) map.flyTo(parcelCenterLatLng(selected, index), compact ? 15 : Math.max(map.getZoom(), 15), { duration: compact ? 0 : 0.55 });
   }, [compact, ready, selected]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !referencePosition) return;
+    map.flyTo([referencePosition.lat, referencePosition.lon], compact ? 11 : Math.max(map.getZoom(), 13), { duration: compact ? 0 : 0.5 });
+  }, [compact, ready, referencePosition]);
 
   useEffect(() => {
     const L = leafletRef.current;
@@ -554,7 +586,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
         <input ref={geoJsonInputRef} className="geojson-file-input" type="file" accept=".geojson,.json,application/geo+json,application/json" onChange={(event) => void importGeoJson(event)} />
         {visibleLayers?.osmPlaces && <button className="osm-refresh-places" onClick={() => setPlacesReload((value) => value + 1)} disabled={placesLoading}>{placesLoading ? "Loading open places…" : `Refresh OSM places · ${osmFeatures.length}`}</button>}
         {measurement && <div className="osm-measurement"><span>{activeTool === "distance" ? "Distance" : "Area"}</span><b>{measurement}</b><button onClick={() => { setActiveTool("select"); setMeasurement(""); }}>Done</button></div>}
-        <div className="osm-map-status"><i />{BASEMAPS[basemap].label} · open data{onlineLayerIds.length ? ` · ${onlineLayerIds.length} Rwanda ${onlineLayerIds.length === 1 ? "layer" : "layers"}` : ""}{visibleLayers?.parcels ? " + synthetic parcels" : ""}</div>
+        <div className="osm-map-status"><i />{BASEMAPS[basemap].label} · open data{onlineLayerIds.length ? ` · ${onlineLayerIds.length} Rwanda ${onlineLayerIds.length === 1 ? "layer" : "layers"}` : ""}{visibleLayers?.parcels ? " + synthetic parcels" : ""}{analysisFeatures ? " + analysis results" : ""}</div>
       </>}
     </>}
   </div>;
