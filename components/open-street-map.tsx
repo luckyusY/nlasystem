@@ -4,7 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "re
 import dynamic from "next/dynamic";
 import type { LayerGroup, Map as LeafletMap, TileLayer } from "leaflet";
 import type { GeoJsonObject } from "geojson";
-import { Box, Download, Eraser, Expand, LocateFixed, Map, MapPinned, MousePointer2, Mountain, Ruler, Satellite, ScanLine, Upload } from "lucide-react";
+import { Box, Download, Eraser, Expand, LocateFixed, Map, MapPinned, MousePointer2, Ruler, ScanLine, Upload } from "lucide-react";
 import { parcels, type Parcel } from "@/lib/data";
 import { calculatePolygonArea, getReferenceLayers, KIGALI_CENTER_LATLNG, parcelCenterLatLng, parcelRingLatLng, RWANDA_BOUNDS } from "@/lib/geospatial-engine";
 import { buildArcGisExportUrl, findRwandaOnlineLayer, RWANDA_IMAGE_BOUNDS } from "@/lib/rwanda-map-catalog";
@@ -30,9 +30,13 @@ type OpenStreetMapProps = {
   highlightedUpis?: string[];
   onlineLayerIds?: string[];
   onlineLayerOpacity?: number;
+  basemap?: BasemapKey;
+  onBasemapChange?: (basemap: BasemapKey) => void;
+  onLayerStatusChange?: (id: string, status: MapServiceStatus) => void;
 };
 
-type BasemapKey = "street" | "topographic" | "satellite";
+export type BasemapKey = "street" | "humanitarian" | "topographic" | "light" | "dark" | "satellite";
+export type MapServiceStatus = "loading" | "ready" | "error";
 type MapTool = "select" | "distance" | "area";
 type ViewMode = "2d" | "3d";
 type SearchResult = { id: string; name: string; description: string; category: string; lat: number; lon: number };
@@ -40,27 +44,60 @@ type OsmFeature = { id: string; name: string; category: string; lat: number; lon
 type PhotonFeature = { geometry?: { coordinates?: [number, number] }; properties?: { osm_id?: number; osm_type?: string; osm_key?: string; osm_value?: string; type?: string; name?: string; street?: string; district?: string; city?: string; state?: string; countrycode?: string } };
 type OverpassElement = { id: number; type: string; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string> };
 
-const BASEMAPS: Record<BasemapKey, { label: string; detail: string; url: string; attribution: string; maxNativeZoom: number }> = {
+export const BASEMAPS: Record<BasemapKey, { label: string; shortLabel: string; detail: string; url: string; attribution: string; maxNativeZoom: number; tone: string }> = {
   street: {
     label: "OSM Street",
+    shortLabel: "Street",
     detail: "Open community street map",
     url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
     maxNativeZoom: 19,
+    tone: "street",
+  },
+  humanitarian: {
+    label: "Humanitarian",
+    shortLabel: "Humanitarian",
+    detail: "High-contrast roads, settlements and services",
+    url: "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a> · Tiles by <a href="https://www.hotosm.org" target="_blank" rel="noreferrer">HOT</a>',
+    maxNativeZoom: 19,
+    tone: "humanitarian",
   },
   topographic: {
     label: "OpenTopoMap",
+    shortLabel: "Topographic",
     detail: "Terrain and elevation context",
     url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
     attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>, SRTM | Map style &copy; <a href="https://opentopomap.org" target="_blank" rel="noreferrer">OpenTopoMap</a> (CC-BY-SA)',
     maxNativeZoom: 17,
+    tone: "topographic",
+  },
+  light: {
+    label: "CARTO Positron",
+    shortLabel: "Light",
+    detail: "Clean light canvas for operational overlays",
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>',
+    maxNativeZoom: 20,
+    tone: "light",
+  },
+  dark: {
+    label: "CARTO Dark Matter",
+    shortLabel: "Dark",
+    detail: "Dark canvas for bright thematic overlays",
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>',
+    maxNativeZoom: 20,
+    tone: "dark",
   },
   satellite: {
     label: "NASA Earth",
+    shortLabel: "Satellite",
     detail: "VIIRS true colour · 08 Aug 2026",
     url: "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/2026-08-08/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg",
     attribution: 'Imagery &copy; <a href="https://www.earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA EOSDIS GIBS</a>',
     maxNativeZoom: 9,
+    tone: "satellite",
   },
 };
 
@@ -136,7 +173,7 @@ out center tags 80;`;
   return normalizeOverpassFeatures(data.elements ?? []);
 }
 
-export default function OpenStreetMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis = [], onlineLayerIds = [], onlineLayerOpacity = 1 }: OpenStreetMapProps) {
+export default function OpenStreetMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis = [], onlineLayerIds = [], onlineLayerOpacity = 1, basemap: controlledBasemap, onBasemapChange, onLayerStatusChange }: OpenStreetMapProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -150,9 +187,12 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   const geoJsonInputRef = useRef<HTMLInputElement>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const notifyRef = useRef(onNotify);
+  const layerStatusRef = useRef(onLayerStatusChange);
   const [ready, setReady] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("2d");
-  const [basemap, setBasemap] = useState<BasemapKey>("street");
+  const [internalBasemap, setInternalBasemap] = useState<BasemapKey>("street");
+  const [basemapStatus, setBasemapStatus] = useState<MapServiceStatus>("loading");
+  const basemap = controlledBasemap ?? internalBasemap;
   const [activeTool, setActiveTool] = useState<MapTool>("select");
   const [measurement, setMeasurement] = useState("");
   const [query, setQuery] = useState("");
@@ -167,6 +207,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   const referenceLayers = useMemo(() => getReferenceLayers(), []);
 
   useEffect(() => { notifyRef.current = onNotify; }, [onNotify]);
+  useEffect(() => { layerStatusRef.current = onLayerStatusChange; }, [onLayerStatusChange]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -220,6 +261,9 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     baseLayerRef.current?.remove();
     const config = BASEMAPS[basemap];
     const layer = L.tileLayer(config.url, { maxNativeZoom: config.maxNativeZoom, maxZoom: 19, minZoom: 5, attribution: config.attribution });
+    setBasemapStatus("loading");
+    layer.once("tileload", () => setBasemapStatus("ready"));
+    layer.once("tileerror", () => setBasemapStatus("error"));
     layer.addTo(map).bringToBack();
     baseLayerRef.current = layer;
   }, [basemap, ready]);
@@ -233,20 +277,21 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     const activeLayers = onlineLayerIds.map(findRwandaOnlineLayer).filter((layer) => layer !== undefined);
     const imageAttributions: string[] = [];
     activeLayers.forEach((layer) => {
+      layerStatusRef.current?.(layer.id, "loading");
       const opacity = Math.max(0.12, Math.min(1, layer.opacity * onlineLayerOpacity));
       const attribution = `<a href="${layer.sourceUrl}" target="_blank" rel="noreferrer">${layer.provider}</a> · ${layer.licence}`;
       if (layer.kind === "arcgis-image") {
         const imageLayer = L.imageOverlay(buildArcGisExportUrl(layer), RWANDA_IMAGE_BOUNDS, { opacity, alt: layer.title, className: "rwanda-online-image" });
-        imageLayer.on("load", () => notifyRef.current?.(`${layer.shortTitle} loaded from ${layer.provider}`));
-        imageLayer.on("error", () => notifyRef.current?.(`${layer.shortTitle} is temporarily unavailable from its source`));
+        imageLayer.on("load", () => { layerStatusRef.current?.(layer.id, "ready"); notifyRef.current?.(`${layer.shortTitle} loaded from ${layer.provider}`); });
+        imageLayer.on("error", () => { layerStatusRef.current?.(layer.id, "error"); notifyRef.current?.(`${layer.shortTitle} is temporarily unavailable from its source`); });
         imageLayer.addTo(destination).bringToBack();
         map.attributionControl.addAttribution(attribution);
         imageAttributions.push(attribution);
       } else if (layer.wmsLayer) {
         const wmsOptions = { layers: layer.wmsLayer, format: "image/png", transparent: true, opacity, attribution, version: "1.3.0", ...(layer.wmsTime ? { time: layer.wmsTime } : {}) };
         const wmsLayer = L.tileLayer.wms(layer.serviceUrl, wmsOptions);
-        wmsLayer.on("load", () => notifyRef.current?.(`${layer.shortTitle} loaded from ${layer.provider}`));
-        wmsLayer.on("tileerror", () => notifyRef.current?.(`${layer.shortTitle} has unavailable tiles at this zoom`));
+        wmsLayer.once("tileload", () => { layerStatusRef.current?.(layer.id, "ready"); notifyRef.current?.(`${layer.shortTitle} loaded from ${layer.provider}`); });
+        wmsLayer.on("tileerror", () => { layerStatusRef.current?.(layer.id, "error"); notifyRef.current?.(`${layer.shortTitle} has unavailable tiles at this zoom`); });
         wmsLayer.addTo(destination).bringToBack();
       }
     });
@@ -494,7 +539,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
       {viewMode === "2d" && <>
         <form className="osm-search" onSubmit={searchMap}><span>⌕</span><input aria-label="Search parcels and OpenStreetMap places" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search parcel UPI or any place in Rwanda…" /><button disabled={searching}>{searching ? "…" : "Search"}</button></form>
         {(searchResults.length > 0 || searchError) && <div className="osm-search-results">{searchError && <p>{searchError}</p>}{searchResults.map((result) => <button key={result.id} onClick={() => openSearchResult(result)}><span>OSM</span><b>{result.name}<small>{result.description}</small></b><i>›</i></button>)}</div>}
-        <div className="osm-basemap-switcher" aria-label="Basemap selection">{(Object.keys(BASEMAPS) as BasemapKey[]).map((key) => { const Icon = key === "street" ? Map : key === "topographic" ? Mountain : Satellite; return <button key={key} className={basemap === key ? "active" : ""} onClick={() => setBasemap(key)} title={BASEMAPS[key].detail}><Icon size={13} aria-hidden /><span>{key === "street" ? "Street" : key === "topographic" ? "Topo" : "NASA Earth"}</span></button>; })}</div>
+        <label className="osm-basemap-switcher"><span><Map size={14} aria-hidden /><i className={basemapStatus} /></span><select aria-label="Select map background" value={basemap} onChange={(event) => { const next = event.target.value as BasemapKey; setInternalBasemap(next); onBasemapChange?.(next); }} title={BASEMAPS[basemap].detail}>{(Object.keys(BASEMAPS) as BasemapKey[]).map((key) => <option key={key} value={key}>{BASEMAPS[key].shortLabel}</option>)}</select></label>
         <div className="osm-map-tools" aria-label="Open mapping tools">
           <button aria-label="Select parcels" className={activeTool === "select" ? "active" : ""} onClick={() => { setActiveTool("select"); setMeasurement(""); }} title="Select parcels"><MousePointer2 size={16} aria-hidden /></button>
           <button aria-label="Measure distance" className={activeTool === "distance" ? "active" : ""} onClick={() => setActiveTool("distance")} title="Measure distance"><Ruler size={16} aria-hidden /></button>

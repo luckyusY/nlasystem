@@ -82,11 +82,17 @@ export default function ThreeDMap({ selected, onSelect, highlightedUpis = [] }: 
       loadTimer = window.setTimeout(() => setFailed(true), 20_000);
       map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
       map.addControl(new maplibregl.ScaleControl({ unit: "metric", maxWidth: 110 }), "bottom-left");
+      map.once("load", () => {
+        if (disposed) return;
+        if (loadTimer) window.clearTimeout(loadTimer);
+        map.resize();
+        map.triggerRepaint();
+        setReady(true);
+      });
 
       map.on("style.load", () => {
         if (disposed) return;
         if (map.getSource("nla-3d-parcels")) return;
-        if (loadTimer) window.clearTimeout(loadTimer);
         const firstLabel = map.getStyle().layers.find((layer) => layer.type === "symbol" && layer.layout?.["text-field"])?.id;
         if (!map.getLayer("building-3d") && map.getSource("openmaptiles")) map.addLayer({
           id: "osm-3d-buildings",
@@ -134,7 +140,6 @@ export default function ThreeDMap({ selected, onSelect, highlightedUpis = [] }: 
         });
         map.resize();
         map.triggerRepaint();
-        setReady(true);
       });
     } catch {
       window.setTimeout(() => setFailed(true), 0);

@@ -3,26 +3,30 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { BarChart3, Bell, Bot, BookOpen, Boxes, CircleDotDashed, Combine, Database, Download, ExternalLink, FileDown, FileText, HeartPulse, Home, LandPlot, Layers3, LoaderCircle, Map as MapIcon, Menu, MoreHorizontal, Play, Radar, RadioTower, Route, Satellite, ScanLine, ScrollText, Search, Settings, ShieldCheck, SlidersHorizontal, Sparkles, Tags, TreePine, Waves, Workflow, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, Bot, BookOpen, Boxes, CheckCircle2, CircleDotDashed, Combine, Database, Download, Droplets, ExternalLink, FileDown, FileText, HeartPulse, LandPlot, Layers3, LoaderCircle, Map as MapIcon, Menu, MoreHorizontal, Palette, Play, Radar, RadioTower, Route, Satellite, ScanLine, ScrollText, Search, Server, Settings, ShieldCheck, SlidersHorizontal, Sparkles, Tags, TreePine, Waves, Workflow, XCircle, type LucideIcon } from "lucide-react";
 import { A11y, Keyboard, Pagination } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
-import OpenStreetMap, { type MapLayerVisibility } from "@/components/open-street-map";
+import OpenStreetMap, { BASEMAPS, type BasemapKey, type MapLayerVisibility, type MapServiceStatus } from "@/components/open-street-map";
 import { auditEvents, corsStations, datasets, parcels, reports, roles, type Parcel } from "@/lib/data";
 import { analyzeParcels, type SpatialMetric } from "@/lib/geospatial-engine";
 import { inferLocalGeoIntent, warmLocalGeoAI, type LocalGeoAIResult } from "@/lib/local-geoai";
 import { DOCUMENT_CATEGORIES, OFFICIAL_DOCUMENTS, searchOfficialDocuments } from "@/lib/official-document-catalog";
-import { RWANDA_MAP_CATEGORIES, RWANDA_ONLINE_MAP_LAYERS, type RwandaMapCategory } from "@/lib/rwanda-map-catalog";
+import { RWANDA_DEGRADED_MAP_LAYERS, RWANDA_MAP_CATEGORIES, RWANDA_MAP_VERIFIED_AT, RWANDA_ONLINE_MAP_LAYERS, RWANDA_VERIFIED_MAP_LAYERS, type RwandaMapCategory } from "@/lib/rwanda-map-catalog";
 
-type PageKey = "dashboard" | "assistant" | "map" | "parcels" | "analysis" | "catalogue" | "knowledge" | "reports" | "cors" | "satellite" | "audit" | "admin" | "health";
+type PageKey = "dashboard" | "assistant" | "map" | "maplibrary" | "parcels" | "analysis" | "catalogue" | "knowledge" | "reports" | "cors" | "satellite" | "audit" | "admin" | "health";
 type Message = { id: number; role: "assistant" | "user"; text: string; sources?: string[]; stats?: { label: string; value: string }[]; warning?: string };
 
 const navGroups: { label: string; items: { key: PageKey; label: string }[] }[] = [
+  { label: "Maps & analysis", items: [
+    { key: "map", label: "Map Explorer" },
+    { key: "maplibrary", label: "Map Library" },
+    { key: "analysis", label: "GIS Analysis" },
+    { key: "satellite", label: "Change Detection" },
+  ]},
   { label: "Workspace", items: [
     { key: "dashboard", label: "Dashboard" },
     { key: "assistant", label: "NLA GeoAI" },
-    { key: "map", label: "Interactive Map" },
     { key: "parcels", label: "Parcels" },
-    { key: "analysis", label: "GIS Analysis" },
   ]},
   { label: "Knowledge", items: [
     { key: "catalogue", label: "NSDI Catalogue" },
@@ -31,7 +35,6 @@ const navGroups: { label: string; items: { key: PageKey; label: string }[] }[] =
   ]},
   { label: "Operations", items: [
     { key: "cors", label: "CORS Monitoring" },
-    { key: "satellite", label: "Change Detection" },
     { key: "audit", label: "Audit Logs" },
     { key: "admin", label: "Administration" },
     { key: "health", label: "System Health" },
@@ -42,6 +45,7 @@ const PAGE_ICONS: Record<PageKey, LucideIcon> = {
   dashboard: BarChart3,
   assistant: Bot,
   map: MapIcon,
+  maplibrary: Layers3,
   parcels: LandPlot,
   analysis: Workflow,
   catalogue: Database,
@@ -58,6 +62,7 @@ const titles: Record<PageKey, { eyebrow: string; title: string; subtitle: string
   dashboard: { eyebrow: "Operational overview", title: "Good evening, Aline", subtitle: "Here is the current state of the GeoAI prototype workspace." },
   assistant: { eyebrow: "Decision support", title: "NLA GeoAI Assistant", subtitle: "Ask questions across parcels, GIS layers, NSDI metadata and verified official-source documents." },
   map: { eyebrow: "National geospatial workspace", title: "Interactive Rwanda Map", subtitle: "Combine parcels with live national, forestry, water, terrain, risk and infrastructure maps." },
+  maplibrary: { eyebrow: "50 curated Rwanda services", title: "Rwanda Map Library", subtitle: "Browse verified national, water, land, forestry, terrain, soil, infrastructure and conservation maps, then add them directly to the explorer." },
   parcels: { eyebrow: "Land intelligence", title: "Parcel Registry", subtitle: "Search and inspect non-sensitive synthetic cadastral records." },
   analysis: { eyebrow: "Open spatial tools", title: "GIS Analysis", subtitle: "Run real Turf.js proximity, intersection, buffer and area workflows." },
   catalogue: { eyebrow: "National Spatial Data Infrastructure", title: "NSDI Data Catalogue", subtitle: "Discover available geospatial datasets and their access conditions." },
@@ -130,7 +135,7 @@ function getAssistantResponse(question: string): Message {
 
 export default function GeoAIApp() {
   const reduceMotion = useReducedMotion();
-  const [page, setPage] = useState<PageKey>("dashboard");
+  const [page, setPage] = useState<PageKey>("map");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -215,6 +220,7 @@ export default function GeoAIApp() {
               {page === "dashboard" && <Dashboard onNavigate={navigate} notify={notify} />}
               {page === "assistant" && <AssistantPage onOpenMap={() => navigate("map")} notify={notify} />}
               {page === "map" && <MapPage notify={notify} highlightedUpis={analysisMatches} />}
+              {page === "maplibrary" && <MapPage notify={notify} highlightedUpis={analysisMatches} initialTab="catalogue" />}
               {page === "parcels" && <ParcelsPage key={registryQuery} initialQuery={registryQuery} onAnalyse={() => navigate("assistant")} notify={notify} />}
               {page === "analysis" && <AnalysisPage onOpenMap={(matches) => { setAnalysisMatches(matches.map((parcel) => parcel.upi)); navigate("map"); }} notify={notify} />}
               {page === "catalogue" && <CataloguePage notify={notify} />}
@@ -230,9 +236,9 @@ export default function GeoAIApp() {
         </div>
       </main>
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        <button className={page === "dashboard" ? "active" : ""} onClick={() => navigate("dashboard")}><span><Home size={17} aria-hidden /></span><small>Home</small></button>
+        <button className={page === "map" ? "active" : ""} onClick={() => navigate("map")}><span><MapIcon size={18} aria-hidden /></span><small>Map</small></button>
+        <button className={page === "maplibrary" ? "active" : ""} onClick={() => navigate("maplibrary")}><span><Layers3 size={18} aria-hidden /></span><small>Layers</small></button>
         <button className={page === "assistant" ? "active" : ""} onClick={() => navigate("assistant")}><span><Bot size={17} aria-hidden /></span><small>GeoAI</small></button>
-        <button className={page === "map" ? "active" : ""} onClick={() => navigate("map")}><span><MapIcon size={17} aria-hidden /></span><small>Map</small></button>
         <button className={page === "parcels" ? "active" : ""} onClick={() => navigate("parcels")}><span><LandPlot size={17} aria-hidden /></span><small>Parcels</small></button>
         <button onClick={() => setSidebarOpen(true)}><span><MoreHorizontal size={18} aria-hidden /></span><small>More</small></button>
       </nav>
@@ -368,16 +374,29 @@ function AssistantPage({ onOpenMap, notify }: { onOpenMap: () => void; notify: (
 
 function ContextItem({ mark, title, meta, status }: { mark: string; title: string; meta: string; status: string }) { return <div className="context-item"><span>{mark}</span><p><b>{title}</b><small>{meta}</small></p><em>{status}</em></div>; }
 
-function ParcelMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis, onlineLayerIds, onlineLayerOpacity }: { compact?: boolean; selected?: Parcel; onSelect?: (p: Parcel) => void; onClearSelection?: () => void; onNotify?: (message: string) => void; visibleLayers?: Partial<MapLayerVisibility>; highlightedUpis?: string[]; onlineLayerIds?: string[]; onlineLayerOpacity?: number }) {
-  return <OpenStreetMap compact={compact} selected={selected} onSelect={onSelect} onClearSelection={onClearSelection} onNotify={onNotify} visibleLayers={visibleLayers} highlightedUpis={highlightedUpis} onlineLayerIds={onlineLayerIds} onlineLayerOpacity={onlineLayerOpacity} />;
+function ParcelMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis, onlineLayerIds, onlineLayerOpacity, basemap, onBasemapChange, onLayerStatusChange }: { compact?: boolean; selected?: Parcel; onSelect?: (p: Parcel) => void; onClearSelection?: () => void; onNotify?: (message: string) => void; visibleLayers?: Partial<MapLayerVisibility>; highlightedUpis?: string[]; onlineLayerIds?: string[]; onlineLayerOpacity?: number; basemap?: BasemapKey; onBasemapChange?: (basemap: BasemapKey) => void; onLayerStatusChange?: (id: string, status: MapServiceStatus) => void }) {
+  return <OpenStreetMap compact={compact} selected={selected} onSelect={onSelect} onClearSelection={onClearSelection} onNotify={onNotify} visibleLayers={visibleLayers} highlightedUpis={highlightedUpis} onlineLayerIds={onlineLayerIds} onlineLayerOpacity={onlineLayerOpacity} basemap={basemap} onBasemapChange={onBasemapChange} onLayerStatusChange={onLayerStatusChange} />;
 }
 
-function MapPage({ notify, highlightedUpis }: { notify: (s: string) => void; highlightedUpis: string[] }) {
+type MapTab = "layers" | "catalogue" | "basemaps";
+
+const MAP_THEMES: { id: string; title: string; detail: string; icon: LucideIcon; layerIds: string[] }[] = [
+  { id: "land", title: "Land management", detail: "Land cover, boundaries and roads", icon: LandPlot, layerIds: ["rsa-landcover-2024", "rsa-admin", "rsa-road", "rwb-districts"] },
+  { id: "forest", title: "Forestry & parks", detail: "Forest cover and protected areas", icon: TreePine, layerIds: ["rsa-landcover-2024", "esa-worldcover-2021", "rsa-protected", "rwb-national-parks"] },
+  { id: "water", title: "Water resources", detail: "Rivers, lakes, catchments and groundwater", icon: Droplets, layerIds: ["rwb-rivers", "rwb-lakes", "rwb-catchments", "rwb-groundwater-potential"] },
+  { id: "risk", title: "Risk screening", detail: "Flood, slope and settlement risk", icon: Radar, layerIds: ["rsa-flood", "rsa-flood-2025", "rsa-slope", "rsa-informal-risk"] },
+  { id: "agriculture", title: "Agriculture & soils", detail: "Land cover, soil nutrients and irrigation", icon: Waves, layerIds: ["rsa-landcover-2024", "rsa-soil-ph", "rsa-nitrogen", "rwb-irrigation"] },
+  { id: "services", title: "Public services", detail: "Roads, health, education and water plants", icon: Route, layerIds: ["rsa-road", "rsa-health", "rsa-education", "rwb-water-treatment"] },
+];
+
+function MapPage({ notify, highlightedUpis, initialTab = "layers" }: { notify: (s: string) => void; highlightedUpis: string[]; initialTab?: MapTab }) {
   const [selected, setSelected] = useState<Parcel | undefined>(() => parcels.find((parcel) => highlightedUpis.includes(parcel.upi)) ?? parcels[0]);
   const [layers, setLayers] = useState<MapLayerVisibility>({ parcels: true, osmPlaces: false, roads: true, wetlands: true, zoning: false, boundaries: true });
-  const [mapTab, setMapTab] = useState<"layers" | "catalogue">("layers");
+  const [mapTab, setMapTab] = useState<MapTab>(initialTab);
   const [onlineLayerIds, setOnlineLayerIds] = useState<string[]>([]);
   const [onlineLayerOpacity, setOnlineLayerOpacity] = useState(1);
+  const [basemap, setBasemap] = useState<BasemapKey>("street");
+  const [layerStatuses, setLayerStatuses] = useState<Record<string, MapServiceStatus>>({});
   const [catalogueQuery, setCatalogueQuery] = useState("");
   const [catalogueCategory, setCatalogueCategory] = useState<"All" | RwandaMapCategory>("All");
 
@@ -386,7 +405,16 @@ function MapPage({ notify, highlightedUpis }: { notify: (s: string) => void; hig
     const matchesCategory = catalogueCategory === "All" || layer.category === catalogueCategory;
     const searchable = `${layer.title} ${layer.description} ${layer.provider} ${layer.tags.join(" ")}`.toLowerCase();
     return matchesCategory && searchable.includes(catalogueQuery.trim().toLowerCase());
-  });
+  }).sort((a, b) => Number(onlineLayerIds.includes(b.id)) - Number(onlineLayerIds.includes(a.id)) || Number(b.availability === "verified") - Number(a.availability === "verified") || a.title.localeCompare(b.title));
+
+  function displayLayerStatus(id: string, availability: "verified" | "degraded") {
+    const runtime = layerStatuses[id];
+    if (runtime === "loading") return { label: "Loading", className: "loading" };
+    if (runtime === "ready") return { label: "Live on map", className: "ready" };
+    if (runtime === "error") return { label: "Load failed", className: "error" };
+    if (availability === "degraded") return { label: "Source intermittent", className: "warning" };
+    return { label: "Verified live", className: "verified" };
+  }
 
   function toggleOnlineLayer(id: string) {
     setOnlineLayerIds((current) => {
@@ -400,21 +428,40 @@ function MapPage({ notify, highlightedUpis }: { notify: (s: string) => void; hig
         return current;
       }
       const layer = RWANDA_ONLINE_MAP_LAYERS.find((item) => item.id === id);
-      notify(`Loading ${layer?.shortTitle ?? "online layer"} and fitting Rwanda`);
+      notify(layer?.availability === "degraded" ? `Retrying ${layer.shortTitle}; its source was intermittent during verification` : `Loading ${layer?.shortTitle ?? "online layer"} and fitting Rwanda`);
       return [...current, id];
     });
   }
 
-  return <div className="map-workspace"><div className="map-main"><ParcelMap selected={selected} onSelect={setSelected} onClearSelection={() => setSelected(undefined)} onNotify={notify} visibleLayers={layers} highlightedUpis={highlightedUpis} onlineLayerIds={onlineLayerIds} onlineLayerOpacity={onlineLayerOpacity} /></div>
-    <aside className="map-side"><div className="map-tabs"><button className={mapTab === "layers" ? "active" : ""} onClick={() => setMapTab("layers")}>Layers <em>{onlineLayerIds.length}</em></button><button className={mapTab === "catalogue" ? "active" : ""} onClick={() => setMapTab("catalogue")}>Rwanda maps <em>{RWANDA_ONLINE_MAP_LAYERS.length}</em></button></div>
+  function applyTheme(title: string, ids: string[]) {
+    const usable = ids.filter((id) => RWANDA_ONLINE_MAP_LAYERS.some((layer) => layer.id === id && layer.availability === "verified")).slice(0, 4);
+    setOnlineLayerIds(usable);
+    setLayerStatuses({});
+    setMapTab("layers");
+    notify(`${title} map stack opened with ${usable.length} verified layers`);
+  }
+
+  return <div className={`map-workspace ${initialTab === "catalogue" ? "library-entry" : ""}`}><div className="map-main"><ParcelMap selected={selected} onSelect={setSelected} onClearSelection={() => setSelected(undefined)} onNotify={notify} visibleLayers={layers} highlightedUpis={highlightedUpis} onlineLayerIds={onlineLayerIds} onlineLayerOpacity={onlineLayerOpacity} basemap={basemap} onBasemapChange={setBasemap} onLayerStatusChange={(id, status) => setLayerStatuses((current) => current[id] === status ? current : { ...current, [id]: status })} /></div>
+    <aside className="map-side"><div className="map-tabs"><button className={mapTab === "layers" ? "active" : ""} onClick={() => setMapTab("layers")}>Active <em>{onlineLayerIds.length}</em></button><button className={mapTab === "catalogue" ? "active" : ""} onClick={() => setMapTab("catalogue")}>Map library <em>{RWANDA_ONLINE_MAP_LAYERS.length}</em></button><button className={mapTab === "basemaps" ? "active" : ""} onClick={() => setMapTab("basemaps")}>Basemaps <em>{Object.keys(BASEMAPS).length}</em></button></div>
       {mapTab === "layers" ? <>
         {highlightedUpis.length > 0 && <div className="analysis-map-note"><Workflow size={16} aria-hidden /><p><b>Analysis result</b><small>{highlightedUpis.length} matched parcels highlighted in orange</small></p></div>}
-        <div className="open-map-note"><span>RW</span><p><b>National online map stack</b><small>RSA · RWB · ESA · NASA · OpenStreetMap</small></p></div>
-        {activeOnlineLayers.length > 0 && <div className="active-online-section"><div className="active-online-head"><p><b>Online map overlays</b><small>{activeOnlineLayers.length} of 4 active</small></p><button onClick={() => setMapTab("catalogue")}>Add maps</button></div>{activeOnlineLayers.map((layer) => <div className="active-online-layer" key={layer.id}><i style={{ background: layer.accent }} /><p><b>{layer.shortTitle}</b><small>{layer.provider}</small></p><button aria-label={`Remove ${layer.title}`} onClick={() => toggleOnlineLayer(layer.id)}>×</button></div>)}<label className="layer-opacity"><span><SlidersHorizontal size={13} aria-hidden />Overlay opacity</span><b>{Math.round(onlineLayerOpacity * 100)}%</b><input aria-label="Online overlay opacity" type="range" min="25" max="100" value={Math.round(onlineLayerOpacity * 100)} onChange={(event) => setOnlineLayerOpacity(Number(event.target.value) / 100)} /></label></div>}
+        <div className="map-service-overview"><span><Server size={18} aria-hidden /></span><p><b>Rwanda map services</b><small>{RWANDA_VERIFIED_MAP_LAYERS.length} verified live · {RWANDA_DEGRADED_MAP_LAYERS.length} intermittent · checked {RWANDA_MAP_VERIFIED_AT}</small></p><button onClick={() => setMapTab("catalogue")}>Browse all</button></div>
+        {activeOnlineLayers.length > 0 && <div className="active-online-section"><div className="active-online-head"><p><b>Online map overlays</b><small>{activeOnlineLayers.length} of 4 active</small></p><button onClick={() => setMapTab("catalogue")}>Add maps</button></div>{activeOnlineLayers.map((layer) => { const status = displayLayerStatus(layer.id, layer.availability); return <div className="active-online-layer" key={layer.id}><i style={{ background: layer.accent }} /><p><b>{layer.shortTitle}</b><small>{layer.provider}<span className={`layer-live-state ${status.className}`}>{status.label}</span></small></p><button aria-label={`Remove ${layer.title}`} onClick={() => toggleOnlineLayer(layer.id)}>×</button></div>; })}<label className="layer-opacity"><span><SlidersHorizontal size={13} aria-hidden />Overlay opacity</span><b>{Math.round(onlineLayerOpacity * 100)}%</b><input aria-label="Online overlay opacity" type="range" min="25" max="100" value={Math.round(onlineLayerOpacity * 100)} onChange={(event) => setOnlineLayerOpacity(Number(event.target.value) / 100)} /></label></div>}
         {activeOnlineLayers.length === 0 && <button className="empty-online-layers" onClick={() => setMapTab("catalogue")}><Layers3 size={20} aria-hidden /><span><b>Add authoritative Rwanda maps</b><small>Browse {RWANDA_ONLINE_MAP_LAYERS.length} national, water, forest and risk layers</small></span><i>→</i></button>}
         <div className="layer-group"><h3>Live open data <span>−</span></h3><LayerToggle label="Live OSM places" sub="Schools · health · government · markets" checked={layers.osmPlaces} onChange={() => setLayers({ ...layers, osmPlaces: !layers.osmPlaces })} /><LayerToggle label="Analysis roads" sub="Shared Turf road-reference geometry" checked={layers.roads} onChange={() => setLayers({ ...layers, roads: !layers.roads })} /><LayerToggle label="Wetland references" sub="Shared Turf environmental geometry" checked={layers.wetlands} onChange={() => setLayers({ ...layers, wetlands: !layers.wetlands })} /></div><div className="layer-group"><h3>NLA demo context <span>−</span></h3><LayerToggle label="Prototype coverage" sub="Kigali demonstration boundary" checked={layers.boundaries} onChange={() => setLayers({ ...layers, boundaries: !layers.boundaries })} /><LayerToggle label="Synthetic cadastral parcels" sub="128 non-sensitive demonstration records" checked={layers.parcels} onChange={() => setLayers({ ...layers, parcels: !layers.parcels })} /><LayerToggle label="Demo planning zone" sub="Illustrative classification only" checked={layers.zoning} onChange={() => setLayers({ ...layers, zoning: !layers.zoning })} /></div>
         {selected && <div className="selected-card"><div className="selected-head"><span>Selected parcel</span><button onClick={() => setSelected(undefined)}>×</button></div><h3>{selected.upi}</h3><dl><div><dt>District</dt><dd>{selected.district}</dd></div><div><dt>Sector</dt><dd>{selected.sector}</dd></div><div><dt>Area</dt><dd>{selected.area.toLocaleString()} m²</dd></div><div><dt>Land use</dt><dd>{selected.landUse}</dd></div><div><dt>Zoning</dt><dd>{selected.zoning}</dd></div><div><dt>Status</dt><dd><i />{selected.status}</dd></div></dl><button className="primary-button full" onClick={() => notify(`Parcel ${selected.upi} added to the analysis workspace`)}>Analyse parcel</button></div>}
-      </> : <div className="rwanda-map-catalogue"><div className="catalogue-intro"><span><TreePine size={18} aria-hidden /></span><p><b>Rwanda online map library</b><small>Public web-map services curated for planning and environmental screening.</small></p></div><div className="catalogue-search-mini"><Search size={14} aria-hidden /><input aria-label="Search Rwanda online maps" value={catalogueQuery} onChange={(event) => setCatalogueQuery(event.target.value)} placeholder="Search forest, flood, roads…" /></div><select className="catalogue-category" aria-label="Filter Rwanda map category" value={catalogueCategory} onChange={(event) => setCatalogueCategory(event.target.value as typeof catalogueCategory)}><option>All</option>{RWANDA_MAP_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select><div className="catalogue-disclaimer"><ShieldCheck size={15} aria-hidden /><p><b>Source-aware integration</b><small>“Public map service” is not treated as an open-data licence. Each layer shows its actual reuse status.</small></p></div><div className="online-layer-results"><p>{filteredOnlineLayers.length} available {filteredOnlineLayers.length === 1 ? "map" : "maps"}</p>{filteredOnlineLayers.map((layer) => { const active = onlineLayerIds.includes(layer.id); return <article className={active ? "active" : ""} key={layer.id} style={{ borderLeftColor: layer.accent }}><div className="online-layer-title"><span style={{ background: layer.accent }}><Layers3 size={14} aria-hidden /></span><p><b>{layer.title}</b><small>{layer.provider} · {layer.vintage}</small></p><button className={active ? "active" : ""} onClick={() => toggleOnlineLayer(layer.id)} aria-pressed={active}>{active ? "Added" : "Add"}</button></div><p>{layer.description}</p><div className="online-layer-meta"><span>{layer.category}</span><span>{layer.resolution}</span><span>{layer.licence}</span></div><a href={layer.sourceUrl} target="_blank" rel="noreferrer">Open source metadata <ExternalLink size={11} aria-hidden /></a></article>; })}</div></div>}
+      </> : mapTab === "catalogue" ? <div className="rwanda-map-catalogue">
+        <div className="catalogue-intro"><span><Layers3 size={18} aria-hidden /></span><p><b>Rwanda online map library</b><small>Choose a ready-made map stack or combine live services yourself.</small></p></div>
+        <div className="catalogue-health"><span><CheckCircle2 size={16} aria-hidden /></span><p><b>{RWANDA_VERIFIED_MAP_LAYERS.length} services verified live</b><small>{RWANDA_DEGRADED_MAP_LAYERS.length} intermittent sources remain visible with warnings</small></p></div>
+        <div className="map-theme-grid">{MAP_THEMES.map((theme) => { const Icon = theme.icon; return <button key={theme.id} onClick={() => applyTheme(theme.title, theme.layerIds)}><span><Icon size={16} aria-hidden /></span><p><b>{theme.title}</b><small>{theme.detail}</small></p><i>Open</i></button>; })}</div>
+        <div className="catalogue-search-mini"><Search size={14} aria-hidden /><input aria-label="Search Rwanda online maps" value={catalogueQuery} onChange={(event) => setCatalogueQuery(event.target.value)} placeholder="Search forest, flood, roads, groundwater…" /></div>
+        <select className="catalogue-category" aria-label="Filter Rwanda map category" value={catalogueCategory} onChange={(event) => setCatalogueCategory(event.target.value as typeof catalogueCategory)}><option>All</option>{RWANDA_MAP_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select>
+        <div className="catalogue-disclaimer"><ShieldCheck size={15} aria-hidden /><p><b>Source-aware integration</b><small>Public visibility is not assumed to grant unrestricted reuse. Each map shows its provider and licence status.</small></p></div>
+        <div className="online-layer-results"><p>{filteredOnlineLayers.length} {filteredOnlineLayers.length === 1 ? "map" : "maps"} found</p>{filteredOnlineLayers.map((layer) => { const active = onlineLayerIds.includes(layer.id); const status = displayLayerStatus(layer.id, layer.availability); return <article className={`${active ? "active " : ""}${layer.availability === "degraded" ? "degraded" : ""}`} key={layer.id} style={{ borderLeftColor: layer.accent }}><div className="online-layer-title"><span style={{ background: layer.accent }}><Layers3 size={14} aria-hidden /></span><p><b>{layer.title}</b><small>{layer.provider} · {layer.vintage}</small></p><button className={active ? "active" : ""} onClick={() => toggleOnlineLayer(layer.id)} aria-pressed={active}>{active ? "Added" : layer.availability === "degraded" ? "Retry" : "Add"}</button></div><div className={`catalogue-layer-status ${status.className}`}>{status.className === "error" || status.className === "warning" ? <XCircle size={12} aria-hidden /> : status.className === "loading" ? <LoaderCircle className="spin" size={12} aria-hidden /> : <CheckCircle2 size={12} aria-hidden />}{status.label}</div><p>{layer.description}</p>{layer.serviceNote && <p className="service-note">{layer.serviceNote}</p>}<div className="online-layer-meta"><span>{layer.category}</span><span>{layer.resolution}</span><span>{layer.licence}</span></div><a href={layer.sourceUrl} target="_blank" rel="noreferrer">Open source metadata <ExternalLink size={11} aria-hidden /></a></article>; })}</div>
+      </div> : <div className="basemap-library">
+        <div className="catalogue-intro"><span><Palette size={18} aria-hidden /></span><p><b>Map backgrounds</b><small>Switch context without removing your active Rwanda overlays.</small></p></div>
+        <div className="basemap-grid">{(Object.keys(BASEMAPS) as BasemapKey[]).map((key) => { const item = BASEMAPS[key]; return <button key={key} className={basemap === key ? "active" : ""} onClick={() => { setBasemap(key); notify(`${item.label} basemap selected`); }}><span className={`basemap-preview ${item.tone}`}><MapIcon size={22} aria-hidden /></span><p><b>{item.label}</b><small>{item.detail}</small></p><i>{basemap === key ? "Active" : "Use map"}</i></button>; })}</div><div className="basemap-guidance"><ShieldCheck size={16} aria-hidden /><p><b>Choose for the task</b><small>Use Light or Dark for overlays, Topographic for terrain, Humanitarian for settlement context and NASA Earth for recent satellite context.</small></p></div>
+      </div>}
     </aside></div>;
 }
 
