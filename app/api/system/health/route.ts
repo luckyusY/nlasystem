@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { RWANDA_ONLINE_MAP_LAYERS } from "@/lib/rwanda-map-catalog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -36,6 +37,9 @@ export async function GET() {
     checkService("photon", "Photon OSM search", "https://photon.komoot.io/api/?q=Kigali&limit=1", "Live Rwanda place geocoding"),
     checkService("overpass", "Overpass API", "https://overpass.kumi.systems/api/status", "Live OpenStreetMap feature queries"),
     checkService("openfreemap", "OpenFreeMap", "https://tiles.openfreemap.org/styles/liberty", "Open vector style for the 3D map"),
+    checkService("rsa-maps", "Rwanda Space Agency maps", "https://gh.space.gov.rw/server/rest/services?f=pjson", `${RWANDA_ONLINE_MAP_LAYERS.length} curated Rwanda map integrations`),
+    checkService("esa-worldcover", "ESA WorldCover WMS", "https://titiler.terrascope.be/wms?service=WMS&request=GetCapabilities", "Open 10 m global land-cover service"),
+    checkService("rwb-geoportal", "Rwanda Water Geoportal", "https://www.geoportal.rwb.rw/geoserver/ows?service=WMS&request=GetCapabilities", "Public-domain rivers, lakes and catchments"),
   ]);
 
   return NextResponse.json({

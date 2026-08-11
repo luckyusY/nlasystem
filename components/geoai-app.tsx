@@ -3,13 +3,14 @@
 import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { BarChart3, Bell, Bot, BookOpen, Boxes, CircleDotDashed, Combine, Database, Download, FileDown, FileText, HeartPulse, Home, LandPlot, LoaderCircle, Map as MapIcon, Menu, MoreHorizontal, Play, Radar, RadioTower, Route, Satellite, ScanLine, ScrollText, Search, Settings, ShieldCheck, Sparkles, Tags, Waves, Workflow, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, Bot, BookOpen, Boxes, CircleDotDashed, Combine, Database, Download, ExternalLink, FileDown, FileText, HeartPulse, Home, LandPlot, Layers3, LoaderCircle, Map as MapIcon, Menu, MoreHorizontal, Play, Radar, RadioTower, Route, Satellite, ScanLine, ScrollText, Search, Settings, ShieldCheck, SlidersHorizontal, Sparkles, Tags, TreePine, Waves, Workflow, type LucideIcon } from "lucide-react";
 import { A11y, Keyboard, Pagination } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import OpenStreetMap, { type MapLayerVisibility } from "@/components/open-street-map";
 import { auditEvents, corsStations, datasets, documents, parcels, reports, roles, type Parcel } from "@/lib/data";
 import { analyzeParcels, type SpatialMetric } from "@/lib/geospatial-engine";
 import { inferLocalGeoIntent, warmLocalGeoAI, type LocalGeoAIResult } from "@/lib/local-geoai";
+import { RWANDA_MAP_CATEGORIES, RWANDA_ONLINE_MAP_LAYERS, type RwandaMapCategory } from "@/lib/rwanda-map-catalog";
 
 type PageKey = "dashboard" | "assistant" | "map" | "parcels" | "analysis" | "catalogue" | "knowledge" | "reports" | "cors" | "satellite" | "audit" | "admin" | "health";
 type Message = { id: number; role: "assistant" | "user"; text: string; sources?: string[]; stats?: { label: string; value: string }[]; warning?: string };
@@ -55,7 +56,7 @@ const PAGE_ICONS: Record<PageKey, LucideIcon> = {
 const titles: Record<PageKey, { eyebrow: string; title: string; subtitle: string }> = {
   dashboard: { eyebrow: "Operational overview", title: "Good evening, Aline", subtitle: "Here is the current state of the GeoAI prototype workspace." },
   assistant: { eyebrow: "Decision support", title: "NLA GeoAI Assistant", subtitle: "Ask questions across parcels, GIS layers, NSDI metadata and verified demo documents." },
-  map: { eyebrow: "Geospatial workspace", title: "Interactive Map", subtitle: "Explore synthetic parcel geometry and prototype national reference layers." },
+  map: { eyebrow: "National geospatial workspace", title: "Interactive Rwanda Map", subtitle: "Combine parcels with live national, forestry, water, terrain, risk and infrastructure maps." },
   parcels: { eyebrow: "Land intelligence", title: "Parcel Registry", subtitle: "Search and inspect non-sensitive synthetic cadastral records." },
   analysis: { eyebrow: "Open spatial tools", title: "GIS Analysis", subtitle: "Run real Turf.js proximity, intersection, buffer and area workflows." },
   catalogue: { eyebrow: "National Spatial Data Infrastructure", title: "NSDI Data Catalogue", subtitle: "Discover available geospatial datasets and their access conditions." },
@@ -72,6 +73,7 @@ const suggestions = [
   "Show agricultural parcels in Gasabo.",
   "Find parcels within 100 metres of roads.",
   "Which parcels intersect wetlands?",
+  "Show Rwanda forestry and land-cover maps.",
   "Calculate the area of parcel 1/02/03/04/0012.",
   "Find NSDI datasets about roads.",
   "What documents discuss subdivision?",
@@ -101,6 +103,12 @@ function getAssistantResponse(question: string): Message {
     const result = analyzeParcels({ source: "attribute", threshold: 0, road: "KN 5 Road", district: "All districts", landUse: "All categories", zoning: "All zones" });
     const metric = result.metrics[parcel.upi];
     return { ...base, text: `Parcel ${parcel.upi} is a ${metric.areaM2.toLocaleString(undefined, { maximumFractionDigits: 0 })} m² synthetic ${parcel.landUse.toLowerCase()} parcel in ${parcel.sector} Sector, ${parcel.district}. Its centroid is approximately ${metric.roadDistanceM.toFixed(0)} m from KN 5 Road and ${metric.wetlandDistanceM.toFixed(0)} m from the closest demonstration wetland boundary.`, stats: [{ label: "Geodesic area", value: `${metric.areaM2.toFixed(0)} m²` }, { label: "Road distance", value: `${metric.roadDistanceM.toFixed(0)} m` }, { label: "UTM CRS", value: "EPSG:32736" }], sources: ["GeoJSON — Synthetic Parcel Geometry", "Turf.js — geodesic metrics", "Proj4js — UTM 36S centroid"], warning: "AI-generated decision support. Final administrative or legal decisions require an authorized NLA officer." };
+  }
+  const mapTopics = ["forest", "forestry", "land cover", "flood", "erosion", "slope", "soil", "hydrology", "catchment", "biodiversity", "protected area", "air quality", "temperature", "mining", "electricity", "telecom"];
+  const requestedMapTopics = mapTopics.filter((topic) => q.includes(topic));
+  if (requestedMapTopics.length) {
+    const matchingMaps = RWANDA_ONLINE_MAP_LAYERS.filter((layer) => requestedMapTopics.some((topic) => `${layer.title} ${layer.description} ${layer.tags.join(" ")}`.toLowerCase().includes(topic))).slice(0, 5);
+    return { ...base, text: `I found ${matchingMaps.length} relevant online map services for ${requestedMapTopics.join(" and ")}: ${matchingMaps.map((layer) => layer.title).join(", ")}. Open Interactive Rwanda Map → Rwanda maps to add them as live overlays, combine up to four and adjust opacity.`, stats: [{ label: "Relevant maps", value: String(matchingMaps.length) }, { label: "Full catalogue", value: String(RWANDA_ONLINE_MAP_LAYERS.length) }, { label: "Provider keys", value: "None" }], sources: matchingMaps.map((layer) => `${layer.provider} — ${layer.title} — ${layer.licence}`), warning: "Public visibility does not automatically grant unrestricted reuse. Review the licence shown for each source before publication or operational use." };
   }
   if (q.includes("nsdi") || q.includes("dataset") || q.includes("roads")) return { ...base, text: "Yes. The NSDI demonstration catalogue contains a National Road Network dataset maintained by RTDA. It has national coverage, a 1:10,000 reference scale, EPSG:32736 coordinates and internal access classification.", stats: [{ label: "Catalogue matches", value: "2" }, { label: "Latest update", value: "02 Aug 2026" }, { label: "Access", value: "Internal" }], sources: ["NSDI Catalogue — National Road Network", "NSDI Catalogue — Administrative Boundaries"] };
   if (q.includes("subdivision") || q.includes("document")) return { ...base, text: "I found relevant sections in two indexed demonstration documents. They describe a prototype review sequence covering parcel identification, zoning checks, survey-plan validation and authorized officer approval. I cannot verify an official legal requirement from demo material alone.", stats: [{ label: "Documents", value: "2" }, { label: "Relevant sections", value: "7" }, { label: "Verification", value: "Required" }], sources: ["Subdivision Review Guide — DEMO, sections 2–4", "Land Administration Procedures — DEMO, section 8"], warning: "These are DEMO documents, not official regulations. Consult an authorized legal or land administration officer." };
@@ -244,7 +252,7 @@ function PageIntro({ page, onAsk }: { page: PageKey; onAsk: () => void }) {
 function Dashboard({ onNavigate, notify }: { onNavigate: (p: PageKey) => void; notify: (s: string) => void }) {
   const reduceMotion = useReducedMotion();
   const metrics = [
-    ["128", "Synthetic parcels", "+12 this month", "PC"], ["6", "Districts covered", "Prototype scope", "DS"], ["12", "Available GIS layers", "11 online", "LY"], ["42", "NSDI datasets", "+3 indexed", "NS"],
+    ["128", "Synthetic parcels", "+12 this month", "PC"], ["6", "Districts covered", "Prototype scope", "DS"], [String(RWANDA_ONLINE_MAP_LAYERS.length), "Rwanda online maps", "6 source families", "LY"], ["42", "NSDI datasets", "+3 indexed", "NS"],
     ["28", "Documents indexed", "1,483 demo chunks", "DC"], ["Local", "AI runtime", "No provider key", "AI"], ["8", "GIS operations", "Turf geometry", "GA"], ["Live", "Open-stack health", "Runtime checks", "SH"],
   ];
   return <div className="dashboard-stack">
@@ -330,17 +338,53 @@ function AssistantPage({ onOpenMap, notify }: { onOpenMap: () => void; notify: (
 
 function ContextItem({ mark, title, meta, status }: { mark: string; title: string; meta: string; status: string }) { return <div className="context-item"><span>{mark}</span><p><b>{title}</b><small>{meta}</small></p><em>{status}</em></div>; }
 
-function ParcelMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis }: { compact?: boolean; selected?: Parcel; onSelect?: (p: Parcel) => void; onClearSelection?: () => void; onNotify?: (message: string) => void; visibleLayers?: Partial<MapLayerVisibility>; highlightedUpis?: string[] }) {
-  return <OpenStreetMap compact={compact} selected={selected} onSelect={onSelect} onClearSelection={onClearSelection} onNotify={onNotify} visibleLayers={visibleLayers} highlightedUpis={highlightedUpis} />;
+function ParcelMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis, onlineLayerIds, onlineLayerOpacity }: { compact?: boolean; selected?: Parcel; onSelect?: (p: Parcel) => void; onClearSelection?: () => void; onNotify?: (message: string) => void; visibleLayers?: Partial<MapLayerVisibility>; highlightedUpis?: string[]; onlineLayerIds?: string[]; onlineLayerOpacity?: number }) {
+  return <OpenStreetMap compact={compact} selected={selected} onSelect={onSelect} onClearSelection={onClearSelection} onNotify={onNotify} visibleLayers={visibleLayers} highlightedUpis={highlightedUpis} onlineLayerIds={onlineLayerIds} onlineLayerOpacity={onlineLayerOpacity} />;
 }
 
 function MapPage({ notify, highlightedUpis }: { notify: (s: string) => void; highlightedUpis: string[] }) {
   const [selected, setSelected] = useState<Parcel | undefined>(() => parcels.find((parcel) => highlightedUpis.includes(parcel.upi)) ?? parcels[0]);
   const [layers, setLayers] = useState<MapLayerVisibility>({ parcels: true, osmPlaces: false, roads: true, wetlands: true, zoning: false, boundaries: true });
+  const [mapTab, setMapTab] = useState<"layers" | "catalogue">("layers");
+  const [onlineLayerIds, setOnlineLayerIds] = useState<string[]>([]);
+  const [onlineLayerOpacity, setOnlineLayerOpacity] = useState(1);
+  const [catalogueQuery, setCatalogueQuery] = useState("");
+  const [catalogueCategory, setCatalogueCategory] = useState<"All" | RwandaMapCategory>("All");
 
-  return <div className="map-workspace"><div className="map-main"><ParcelMap selected={selected} onSelect={setSelected} onClearSelection={() => setSelected(undefined)} onNotify={notify} visibleLayers={layers} highlightedUpis={highlightedUpis} /></div>
-    <aside className="map-side"><div className="map-tabs"><button className="active">Layers</button><button>Open data</button></div>{highlightedUpis.length > 0 && <div className="analysis-map-note"><Workflow size={16} aria-hidden /><p><b>Analysis result</b><small>{highlightedUpis.length} matched parcels highlighted in orange</small></p></div>}<div className="open-map-note"><span>OS</span><p><b>Open geospatial stack</b><small>Leaflet · MapLibre · Turf · Proj4 · OSM</small></p></div><div className="layer-group"><h3>Open data <span>−</span></h3><LayerToggle label="Live OSM places" sub="Schools · health · government · markets" checked={layers.osmPlaces} onChange={() => setLayers({ ...layers, osmPlaces: !layers.osmPlaces })} /><LayerToggle label="Analysis roads" sub="Shared Turf road-reference geometry" checked={layers.roads} onChange={() => setLayers({ ...layers, roads: !layers.roads })} /><LayerToggle label="Wetland references" sub="Shared Turf environmental geometry" checked={layers.wetlands} onChange={() => setLayers({ ...layers, wetlands: !layers.wetlands })} /></div><div className="layer-group"><h3>NLA demo context <span>−</span></h3><LayerToggle label="Prototype coverage" sub="Kigali demonstration boundary" checked={layers.boundaries} onChange={() => setLayers({ ...layers, boundaries: !layers.boundaries })} /><LayerToggle label="Synthetic cadastral parcels" sub="128 non-sensitive demonstration records" checked={layers.parcels} onChange={() => setLayers({ ...layers, parcels: !layers.parcels })} /><LayerToggle label="Demo planning zone" sub="Illustrative classification only" checked={layers.zoning} onChange={() => setLayers({ ...layers, zoning: !layers.zoning })} /></div>
-      {selected && <div className="selected-card"><div className="selected-head"><span>Selected parcel</span><button onClick={() => setSelected(undefined)}>×</button></div><h3>{selected.upi}</h3><dl><div><dt>District</dt><dd>{selected.district}</dd></div><div><dt>Sector</dt><dd>{selected.sector}</dd></div><div><dt>Area</dt><dd>{selected.area.toLocaleString()} m²</dd></div><div><dt>Land use</dt><dd>{selected.landUse}</dd></div><div><dt>Zoning</dt><dd>{selected.zoning}</dd></div><div><dt>Status</dt><dd><i />{selected.status}</dd></div></dl><button className="primary-button full" onClick={() => notify(`Parcel ${selected.upi} added to the analysis workspace`)}>Analyse parcel</button></div>}
+  const activeOnlineLayers = RWANDA_ONLINE_MAP_LAYERS.filter((layer) => onlineLayerIds.includes(layer.id));
+  const filteredOnlineLayers = RWANDA_ONLINE_MAP_LAYERS.filter((layer) => {
+    const matchesCategory = catalogueCategory === "All" || layer.category === catalogueCategory;
+    const searchable = `${layer.title} ${layer.description} ${layer.provider} ${layer.tags.join(" ")}`.toLowerCase();
+    return matchesCategory && searchable.includes(catalogueQuery.trim().toLowerCase());
+  });
+
+  function toggleOnlineLayer(id: string) {
+    setOnlineLayerIds((current) => {
+      if (current.includes(id)) {
+        const layer = RWANDA_ONLINE_MAP_LAYERS.find((item) => item.id === id);
+        notify(`${layer?.shortTitle ?? "Online layer"} removed from the map`);
+        return current.filter((item) => item !== id);
+      }
+      if (current.length >= 4) {
+        notify("Keep up to four online layers active for a readable map");
+        return current;
+      }
+      const layer = RWANDA_ONLINE_MAP_LAYERS.find((item) => item.id === id);
+      notify(`Loading ${layer?.shortTitle ?? "online layer"} and fitting Rwanda`);
+      return [...current, id];
+    });
+  }
+
+  return <div className="map-workspace"><div className="map-main"><ParcelMap selected={selected} onSelect={setSelected} onClearSelection={() => setSelected(undefined)} onNotify={notify} visibleLayers={layers} highlightedUpis={highlightedUpis} onlineLayerIds={onlineLayerIds} onlineLayerOpacity={onlineLayerOpacity} /></div>
+    <aside className="map-side"><div className="map-tabs"><button className={mapTab === "layers" ? "active" : ""} onClick={() => setMapTab("layers")}>Layers <em>{onlineLayerIds.length}</em></button><button className={mapTab === "catalogue" ? "active" : ""} onClick={() => setMapTab("catalogue")}>Rwanda maps <em>{RWANDA_ONLINE_MAP_LAYERS.length}</em></button></div>
+      {mapTab === "layers" ? <>
+        {highlightedUpis.length > 0 && <div className="analysis-map-note"><Workflow size={16} aria-hidden /><p><b>Analysis result</b><small>{highlightedUpis.length} matched parcels highlighted in orange</small></p></div>}
+        <div className="open-map-note"><span>RW</span><p><b>National online map stack</b><small>RSA · RWB · ESA · NASA · OpenStreetMap</small></p></div>
+        {activeOnlineLayers.length > 0 && <div className="active-online-section"><div className="active-online-head"><p><b>Online map overlays</b><small>{activeOnlineLayers.length} of 4 active</small></p><button onClick={() => setMapTab("catalogue")}>Add maps</button></div>{activeOnlineLayers.map((layer) => <div className="active-online-layer" key={layer.id}><i style={{ background: layer.accent }} /><p><b>{layer.shortTitle}</b><small>{layer.provider}</small></p><button aria-label={`Remove ${layer.title}`} onClick={() => toggleOnlineLayer(layer.id)}>×</button></div>)}<label className="layer-opacity"><span><SlidersHorizontal size={13} aria-hidden />Overlay opacity</span><b>{Math.round(onlineLayerOpacity * 100)}%</b><input aria-label="Online overlay opacity" type="range" min="25" max="100" value={Math.round(onlineLayerOpacity * 100)} onChange={(event) => setOnlineLayerOpacity(Number(event.target.value) / 100)} /></label></div>}
+        {activeOnlineLayers.length === 0 && <button className="empty-online-layers" onClick={() => setMapTab("catalogue")}><Layers3 size={20} aria-hidden /><span><b>Add authoritative Rwanda maps</b><small>Browse {RWANDA_ONLINE_MAP_LAYERS.length} national, water, forest and risk layers</small></span><i>→</i></button>}
+        <div className="layer-group"><h3>Live open data <span>−</span></h3><LayerToggle label="Live OSM places" sub="Schools · health · government · markets" checked={layers.osmPlaces} onChange={() => setLayers({ ...layers, osmPlaces: !layers.osmPlaces })} /><LayerToggle label="Analysis roads" sub="Shared Turf road-reference geometry" checked={layers.roads} onChange={() => setLayers({ ...layers, roads: !layers.roads })} /><LayerToggle label="Wetland references" sub="Shared Turf environmental geometry" checked={layers.wetlands} onChange={() => setLayers({ ...layers, wetlands: !layers.wetlands })} /></div><div className="layer-group"><h3>NLA demo context <span>−</span></h3><LayerToggle label="Prototype coverage" sub="Kigali demonstration boundary" checked={layers.boundaries} onChange={() => setLayers({ ...layers, boundaries: !layers.boundaries })} /><LayerToggle label="Synthetic cadastral parcels" sub="128 non-sensitive demonstration records" checked={layers.parcels} onChange={() => setLayers({ ...layers, parcels: !layers.parcels })} /><LayerToggle label="Demo planning zone" sub="Illustrative classification only" checked={layers.zoning} onChange={() => setLayers({ ...layers, zoning: !layers.zoning })} /></div>
+        {selected && <div className="selected-card"><div className="selected-head"><span>Selected parcel</span><button onClick={() => setSelected(undefined)}>×</button></div><h3>{selected.upi}</h3><dl><div><dt>District</dt><dd>{selected.district}</dd></div><div><dt>Sector</dt><dd>{selected.sector}</dd></div><div><dt>Area</dt><dd>{selected.area.toLocaleString()} m²</dd></div><div><dt>Land use</dt><dd>{selected.landUse}</dd></div><div><dt>Zoning</dt><dd>{selected.zoning}</dd></div><div><dt>Status</dt><dd><i />{selected.status}</dd></div></dl><button className="primary-button full" onClick={() => notify(`Parcel ${selected.upi} added to the analysis workspace`)}>Analyse parcel</button></div>}
+      </> : <div className="rwanda-map-catalogue"><div className="catalogue-intro"><span><TreePine size={18} aria-hidden /></span><p><b>Rwanda online map library</b><small>Public web-map services curated for planning and environmental screening.</small></p></div><div className="catalogue-search-mini"><Search size={14} aria-hidden /><input aria-label="Search Rwanda online maps" value={catalogueQuery} onChange={(event) => setCatalogueQuery(event.target.value)} placeholder="Search forest, flood, roads…" /></div><select className="catalogue-category" aria-label="Filter Rwanda map category" value={catalogueCategory} onChange={(event) => setCatalogueCategory(event.target.value as typeof catalogueCategory)}><option>All</option>{RWANDA_MAP_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select><div className="catalogue-disclaimer"><ShieldCheck size={15} aria-hidden /><p><b>Source-aware integration</b><small>“Public map service” is not treated as an open-data licence. Each layer shows its actual reuse status.</small></p></div><div className="online-layer-results"><p>{filteredOnlineLayers.length} available {filteredOnlineLayers.length === 1 ? "map" : "maps"}</p>{filteredOnlineLayers.map((layer) => { const active = onlineLayerIds.includes(layer.id); return <article className={active ? "active" : ""} key={layer.id} style={{ borderLeftColor: layer.accent }}><div className="online-layer-title"><span style={{ background: layer.accent }}><Layers3 size={14} aria-hidden /></span><p><b>{layer.title}</b><small>{layer.provider} · {layer.vintage}</small></p><button className={active ? "active" : ""} onClick={() => toggleOnlineLayer(layer.id)} aria-pressed={active}>{active ? "Added" : "Add"}</button></div><p>{layer.description}</p><div className="online-layer-meta"><span>{layer.category}</span><span>{layer.resolution}</span><span>{layer.licence}</span></div><a href={layer.sourceUrl} target="_blank" rel="noreferrer">Open source metadata <ExternalLink size={11} aria-hidden /></a></article>; })}</div></div>}
     </aside></div>;
 }
 

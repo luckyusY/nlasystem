@@ -7,6 +7,7 @@ import type { GeoJsonObject } from "geojson";
 import { Box, Download, Eraser, Expand, LocateFixed, Map, MapPinned, MousePointer2, Mountain, Ruler, Satellite, ScanLine, Upload } from "lucide-react";
 import { parcels, type Parcel } from "@/lib/data";
 import { calculatePolygonArea, getReferenceLayers, KIGALI_CENTER_LATLNG, parcelCenterLatLng, parcelRingLatLng, RWANDA_BOUNDS } from "@/lib/geospatial-engine";
+import { buildArcGisExportUrl, findRwandaOnlineLayer, RWANDA_IMAGE_BOUNDS } from "@/lib/rwanda-map-catalog";
 
 const ThreeDMap = dynamic(() => import("@/components/three-d-map"), { ssr: false, loading: () => <div className="three-d-map-loading"><Box size={20} aria-hidden />Loading the 3D engine…</div> });
 
@@ -27,6 +28,8 @@ type OpenStreetMapProps = {
   onNotify?: (message: string) => void;
   visibleLayers?: Partial<MapLayerVisibility>;
   highlightedUpis?: string[];
+  onlineLayerIds?: string[];
+  onlineLayerOpacity?: number;
 };
 
 type BasemapKey = "street" | "topographic" | "satellite";
@@ -133,7 +136,7 @@ out center tags 80;`;
   return normalizeOverpassFeatures(data.elements ?? []);
 }
 
-export default function OpenStreetMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis = [] }: OpenStreetMapProps) {
+export default function OpenStreetMap({ compact = false, selected, onSelect, onClearSelection, onNotify, visibleLayers, highlightedUpis = [], onlineLayerIds = [], onlineLayerOpacity = 1 }: OpenStreetMapProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -142,6 +145,8 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
   const drawingRef = useRef<LayerGroup | null>(null);
   const searchMarkerRef = useRef<LayerGroup | null>(null);
   const importedLayerRef = useRef<LayerGroup | null>(null);
+  const onlineLayersRef = useRef<LayerGroup | null>(null);
+  const lastOnlineLayerSetRef = useRef("");
   const geoJsonInputRef = useRef<HTMLInputElement>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const notifyRef = useRef(onNotify);
@@ -186,6 +191,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
       drawingRef.current = L.layerGroup().addTo(map);
       searchMarkerRef.current = L.layerGroup().addTo(map);
       importedLayerRef.current = L.layerGroup().addTo(map);
+      onlineLayersRef.current = L.layerGroup().addTo(map);
       setReady(true);
       window.setTimeout(() => map.invalidateSize(), 0);
     });
@@ -195,6 +201,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
       drawingRef.current?.remove();
       searchMarkerRef.current?.remove();
       importedLayerRef.current?.remove();
+      onlineLayersRef.current?.remove();
       baseLayerRef.current?.remove();
       mapRef.current?.remove();
       mapRef.current = null;
@@ -212,6 +219,39 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     layer.addTo(map).bringToBack();
     baseLayerRef.current = layer;
   }, [basemap, ready]);
+
+  useEffect(() => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    const destination = onlineLayersRef.current;
+    if (!ready || !L || !map || !destination || compact) return;
+    destination.clearLayers();
+    const activeLayers = onlineLayerIds.map(findRwandaOnlineLayer).filter((layer) => layer !== undefined);
+    const imageAttributions: string[] = [];
+    activeLayers.forEach((layer) => {
+      const opacity = Math.max(0.12, Math.min(1, layer.opacity * onlineLayerOpacity));
+      const attribution = `<a href="${layer.sourceUrl}" target="_blank" rel="noreferrer">${layer.provider}</a> · ${layer.licence}`;
+      if (layer.kind === "arcgis-image") {
+        const imageLayer = L.imageOverlay(buildArcGisExportUrl(layer), RWANDA_IMAGE_BOUNDS, { opacity, alt: layer.title, className: "rwanda-online-image" });
+        imageLayer.on("load", () => notifyRef.current?.(`${layer.shortTitle} loaded from ${layer.provider}`));
+        imageLayer.on("error", () => notifyRef.current?.(`${layer.shortTitle} is temporarily unavailable from its source`));
+        imageLayer.addTo(destination).bringToBack();
+        map.attributionControl.addAttribution(attribution);
+        imageAttributions.push(attribution);
+      } else if (layer.wmsLayer) {
+        const wmsOptions = { layers: layer.wmsLayer, format: "image/png", transparent: true, opacity, attribution, version: "1.3.0", ...(layer.wmsTime ? { time: layer.wmsTime } : {}) };
+        const wmsLayer = L.tileLayer.wms(layer.serviceUrl, wmsOptions);
+        wmsLayer.on("load", () => notifyRef.current?.(`${layer.shortTitle} loaded from ${layer.provider}`));
+        wmsLayer.on("tileerror", () => notifyRef.current?.(`${layer.shortTitle} has unavailable tiles at this zoom`));
+        wmsLayer.addTo(destination).bringToBack();
+      }
+    });
+    baseLayerRef.current?.bringToBack();
+    const layerSet = onlineLayerIds.join("|");
+    if (layerSet && layerSet !== lastOnlineLayerSetRef.current) map.fitBounds(RWANDA_IMAGE_BOUNDS, { padding: [18, 18] });
+    lastOnlineLayerSetRef.current = layerSet;
+    return () => imageAttributions.forEach((attribution) => map.attributionControl.removeAttribution(attribution));
+  }, [compact, onlineLayerIds, onlineLayerOpacity, ready]);
 
   useEffect(() => {
     if (viewMode === "2d") window.setTimeout(() => mapRef.current?.invalidateSize(), 80);
@@ -465,7 +505,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
         <input ref={geoJsonInputRef} className="geojson-file-input" type="file" accept=".geojson,.json,application/geo+json,application/json" onChange={(event) => void importGeoJson(event)} />
         {visibleLayers?.osmPlaces && <button className="osm-refresh-places" onClick={() => setPlacesReload((value) => value + 1)} disabled={placesLoading}>{placesLoading ? "Loading open places…" : `Refresh OSM places · ${osmFeatures.length}`}</button>}
         {measurement && <div className="osm-measurement"><span>{activeTool === "distance" ? "Distance" : "Area"}</span><b>{measurement}</b><button onClick={() => { setActiveTool("select"); setMeasurement(""); }}>Done</button></div>}
-        <div className="osm-map-status"><i />{BASEMAPS[basemap].label} · open data{visibleLayers?.parcels ? " + synthetic parcels" : ""}</div>
+        <div className="osm-map-status"><i />{BASEMAPS[basemap].label} · open data{onlineLayerIds.length ? ` · ${onlineLayerIds.length} Rwanda ${onlineLayerIds.length === 1 ? "layer" : "layers"}` : ""}{visibleLayers?.parcels ? " + synthetic parcels" : ""}</div>
       </>}
     </>}
   </div>;
