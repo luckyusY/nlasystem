@@ -12,6 +12,7 @@ The application demonstrates how an authorized employee could combine GIS analys
 - Searchable registry of 128 synthetic parcels across six districts.
 - Approved road, wetland, proximity, area, zoning and land-use analysis workflows.
 - Searchable NSDI demonstration catalogue and indexed DEMO knowledge documents.
+- Rwanda Government Updates workspace with 20 official-site-confirmed public channels, topic filters, opt-in live X timelines and institution-owned newsroom fallbacks.
 - Parcel, road, wetland, GIS, land-use and NSDI report creation with downloadable PDF output.
 - Simulated CORS/GNSS monitoring and anomaly summaries.
 - Future satellite change-detection workflow with mock findings.
