@@ -1,3 +1,5 @@
+import { RWANDA_BOUNDS } from "@/lib/rwanda-extent";
+
 export type RwandaMapCategory = "Land & forests" | "Agriculture & soils" | "Climate & atmosphere" | "Boundaries" | "Water" | "Risk & terrain" | "Infrastructure" | "Settlements" | "Conservation";
 
 export type RwandaOnlineMapLayer = {
@@ -24,6 +26,8 @@ export type RwandaOnlineMapLayer = {
 };
 
 export type RwandaLicenceClass = "open" | "attribution" | "verify";
+
+export { RWANDA_BOUNDS };
 
 export function getLayerLicenceClass(layer: RwandaOnlineMapLayer): RwandaLicenceClass {
   const licence = layer.licence.toLowerCase();
@@ -200,22 +204,6 @@ export const RWANDA_MAP_CATEGORIES: RwandaMapCategory[] = ["Land & forests", "Ag
 
 export const RWANDA_VERIFIED_MAP_LAYERS = RWANDA_ONLINE_MAP_LAYERS.filter((layer) => layer.availability === "verified");
 export const RWANDA_DEGRADED_MAP_LAYERS = RWANDA_ONLINE_MAP_LAYERS.filter((layer) => layer.availability === "degraded");
-
-export const RWANDA_IMAGE_BOUNDS: [[number, number], [number, number]] = [[-2.85, 28.86], [-1.05, 30.9]];
-
-export function buildArcGisExportUrl(layer: RwandaOnlineMapLayer) {
-  const endpoint = new URL(`${layer.serviceUrl}/export`);
-  endpoint.searchParams.set("bbox", "28.86,-2.85,30.9,-1.05");
-  endpoint.searchParams.set("bboxSR", "4326");
-  endpoint.searchParams.set("imageSR", "3857");
-  endpoint.searchParams.set("size", "1800,1800");
-  endpoint.searchParams.set("format", "png32");
-  endpoint.searchParams.set("transparent", "true");
-  endpoint.searchParams.set("dpi", "120");
-  if (layer.layerIds?.length) endpoint.searchParams.set("layers", `show:${layer.layerIds.join(",")}`);
-  endpoint.searchParams.set("f", "image");
-  return endpoint.toString();
-}
 
 export function findRwandaOnlineLayer(id: string) {
   return RWANDA_ONLINE_MAP_LAYERS.find((layer) => layer.id === id);

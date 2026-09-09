@@ -9,6 +9,7 @@ Use this checklist after `npm run verify` and before publishing a batch. Record 
 - [ ] Click the map and confirm WGS84 plus UTM 36S readout values appear.
 - [ ] Change the basemap, context layers and selected parcel; reload the copied URL and confirm restoration.
 - [ ] Open Map Library, filter by category and licence, then inspect one WMS and one ArcGIS service.
+- [ ] Add a raster overlay and Admin boundaries together, then confirm at country view and at zoom 14 that the raster edge follows the national border rather than sitting inside or outside it.
 - [ ] Run distance/area measurement, GeoJSON import and selected-parcel GeoJSON export.
 - [ ] Run road, wetland, point, nearest-feature, union, hull and envelope workflows.
 - [ ] Export an analysis evidence bundle and confirm session history survives page navigation.

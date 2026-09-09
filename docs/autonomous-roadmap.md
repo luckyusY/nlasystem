@@ -6,7 +6,7 @@ This roadmap turns the demonstration into a useful, map-first geospatial prototy
 
 - [x] **001 — Default to the map workspace.** Opening the product lands on the interactive Rwanda map.
 - [x] **002 — Make maps the first navigation group.** Map Explorer, Map Library, GIS Analysis and Change Detection appear before administrative pages.
-- [x] **003 — Provide six keyless basemaps.** Street, humanitarian, topographic, light, dark and satellite-style backgrounds can be switched.
+- [x] **003 — Provide seven keyless basemaps.** Street, humanitarian, topographic, light, dark, high-resolution satellite and daily satellite backgrounds can be switched, each labelled with its own licence.
 - [x] **004 — Provide national map themes.** One action can assemble useful land, water, terrain and risk layer combinations.
 - [x] **005 — Expose layer provenance.** Every online layer shows its provider, access type, source URL and licence note.
 - [x] **006 — Report map service health.** Loading, ready and unavailable states are visible rather than silently failing.

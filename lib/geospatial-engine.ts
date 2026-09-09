@@ -12,6 +12,9 @@ import {
 import type { Feature, FeatureCollection, LineString, Polygon, Position } from "geojson";
 import proj4 from "proj4";
 import { parcels, type Parcel } from "@/lib/data";
+import { RWANDA_BOUNDS } from "@/lib/rwanda-extent";
+
+export { RWANDA_BOUNDS };
 
 export type SpatialOperationSource = "road" | "wetland" | "area" | "attribute" | "intersection";
 
@@ -33,7 +36,6 @@ export type SpatialAnalysisResult = {
 
 export const KIGALI_CENTER_LATLNG: [number, number] = [-1.9536, 30.0606];
 export const KIGALI_CENTER_LNGLAT: [number, number] = [30.0606, -1.9536];
-export const RWANDA_BOUNDS: [[number, number], [number, number]] = [[-2.85, 28.86], [-1.05, 30.9]];
 
 export const DISTRICT_CENTERS_LATLNG: Record<string, [number, number]> = {
   Gasabo: [-1.9325, 30.1015],
@@ -53,6 +55,24 @@ const ROAD_LINES: Record<string, Feature<LineString>> = {
 const WETLAND_POLYGONS = Object.entries(DISTRICT_CENTERS_LATLNG).map(([district, [lat, lng]], index) =>
   circle([lng + 0.006 + (index % 2) * 0.003, lat - 0.004], 0.55 + (index % 3) * 0.12, { units: "kilometers", steps: 32, properties: { district, name: `${district} demo wetland` } }),
 );
+
+/**
+ * `@turf/area` measures on a sphere of this radius. Converting local metres to degrees on the
+ * same sphere keeps a parcel's drawn outline, its exported GeoJSON and its registered area in
+ * agreement, instead of leaving a silent half-percent disagreement between them.
+ */
+const TURF_SPHERE_RADIUS_M = 6_371_008.8;
+const METRES_PER_DEGREE_LAT = TURF_SPHERE_RADIUS_M * Math.PI / 180;
+
+function planarRingArea(corners: readonly (readonly [number, number])[]) {
+  let total = 0;
+  for (let index = 0; index < corners.length; index += 1) {
+    const [x1, y1] = corners[index];
+    const [x2, y2] = corners[(index + 1) % corners.length];
+    total += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(total) / 2;
+}
 
 function rotatePoint(x: number, y: number, angleDegrees: number) {
   const angle = angleDegrees * Math.PI / 180;
@@ -82,12 +102,14 @@ export function parcelRingLngLat(parcel: Parcel, index?: number): Position[] {
     [halfSide * widthFactor, -halfSide * heightFactor * 0.92],
     [halfSide * widthFactor * 0.94, halfSide * heightFactor],
     [-halfSide * widthFactor, halfSide * heightFactor * 0.9],
-  ];
+  ] as const;
+  // The corner factors that give each parcel an irregular cadastral shape also shrink it by
+  // about 6%. Rescale the quad so the outline encloses exactly the registered area.
+  const scale = Math.sqrt(parcel.area / planarRingArea(corners));
+  const metresPerDegreeLng = METRES_PER_DEGREE_LAT * Math.cos(lat * Math.PI / 180);
   const converted = corners.map(([x, y]) => {
-    const [rotatedX, rotatedY] = rotatePoint(x, y, parcel.rotation);
-    const latitude = lat + rotatedY / 110_574;
-    const longitude = lng + rotatedX / (111_320 * Math.cos(lat * Math.PI / 180));
-    return [longitude, latitude];
+    const [rotatedX, rotatedY] = rotatePoint(x * scale, y * scale, parcel.rotation);
+    return [lng + rotatedX / metresPerDegreeLng, lat + rotatedY / METRES_PER_DEGREE_LAT];
   });
   return [...converted, converted[0]];
 }

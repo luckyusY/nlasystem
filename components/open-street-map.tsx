@@ -7,7 +7,9 @@ import type { GeoJsonObject } from "geojson";
 import { Box, Download, Eraser, Expand, LocateFixed, Map, MapPinned, MousePointer2, Ruler, ScanLine, Upload } from "lucide-react";
 import { parcels, type Parcel } from "@/lib/data";
 import { calculatePolygonArea, getReferenceLayers, KIGALI_CENTER_LATLNG, parseRwandaCoordinate, parcelCenterLatLng, parcelRingLatLng, RWANDA_BOUNDS, toUtm36S } from "@/lib/geospatial-engine";
-import { buildArcGisExportUrl, findRwandaOnlineLayer, RWANDA_IMAGE_BOUNDS } from "@/lib/rwanda-map-catalog";
+import { findRwandaOnlineLayer } from "@/lib/rwanda-map-catalog";
+import { createArcGisDynamicLayer } from "@/lib/arcgis-tile-layer";
+import { RWANDA_VIEW_BOUNDS } from "@/lib/rwanda-extent";
 import { fetchWithTimeout } from "@/lib/network";
 
 const ThreeDMap = dynamic(() => import("@/components/three-d-map"), { ssr: false, loading: () => <div className="three-d-map-loading"><Box size={20} aria-hidden />Loading the 3D engine…</div> });
@@ -40,7 +42,16 @@ type OpenStreetMapProps = {
   referencePosition?: { lat: number; lon: number; label: string };
 };
 
-export type BasemapKey = "street" | "humanitarian" | "topographic" | "light" | "dark" | "satellite";
+export type BasemapKey = "street" | "humanitarian" | "topographic" | "light" | "dark" | "satellite" | "daily";
+
+/**
+ * NASA GIBS publishes one true-colour mosaic per day, so a hard-coded date goes stale and
+ * eventually 404s. Ask for a recent complete UTC day instead and let Leaflet substitute it.
+ */
+export function recentImageryDate(daysBack = 2) {
+  const day = new Date(Date.now() - daysBack * 86_400_000);
+  return day.toISOString().slice(0, 10);
+}
 export type MapServiceStatus = "loading" | "ready" | "error";
 type MapTool = "select" | "distance" | "area";
 type ViewMode = "2d" | "3d";
@@ -49,13 +60,14 @@ type OsmFeature = { id: string; name: string; category: string; lat: number; lon
 type PhotonFeature = { geometry?: { coordinates?: [number, number] }; properties?: { osm_id?: number; osm_type?: string; osm_key?: string; osm_value?: string; type?: string; name?: string; street?: string; district?: string; city?: string; state?: string; countrycode?: string } };
 type OverpassElement = { id: number; type: string; lat?: number; lon?: number; center?: { lat?: number; lon?: number }; tags?: Record<string, string> };
 
-export const BASEMAPS: Record<BasemapKey, { label: string; shortLabel: string; detail: string; url: string; attribution: string; maxNativeZoom: number; tone: string }> = {
+export const BASEMAPS: Record<BasemapKey, { label: string; shortLabel: string; detail: string; url: string; attribution: string; licence: string; maxNativeZoom: number; tone: string }> = {
   street: {
     label: "OSM Street",
     shortLabel: "Street",
     detail: "Open community street map",
     url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
+    licence: "open data · ODbL",
     maxNativeZoom: 19,
     tone: "street",
   },
@@ -65,6 +77,7 @@ export const BASEMAPS: Record<BasemapKey, { label: string; shortLabel: string; d
     detail: "High-contrast roads, settlements and services",
     url: "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a> · Tiles by <a href="https://www.hotosm.org" target="_blank" rel="noreferrer">HOT</a>',
+    licence: "open data · ODbL",
     maxNativeZoom: 19,
     tone: "humanitarian",
   },
@@ -74,35 +87,49 @@ export const BASEMAPS: Record<BasemapKey, { label: string; shortLabel: string; d
     detail: "Terrain and elevation context",
     url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
     attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>, SRTM | Map style &copy; <a href="https://opentopomap.org" target="_blank" rel="noreferrer">OpenTopoMap</a> (CC-BY-SA)',
+    licence: "open data · ODbL + CC-BY-SA",
     maxNativeZoom: 17,
     tone: "topographic",
   },
   light: {
-    label: "CARTO Positron",
+    label: "Light Gray Canvas",
     shortLabel: "Light",
     detail: "Clean light canvas for operational overlays",
-    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>',
-    maxNativeZoom: 20,
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    attribution: 'Tiles &copy; <a href="https://www.esri.com" target="_blank" rel="noreferrer">Esri</a>, HERE, Garmin &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
+    licence: "free to use with attribution · not open data",
+    maxNativeZoom: 19,
     tone: "light",
   },
   dark: {
-    label: "CARTO Dark Matter",
+    label: "Dark Gray Canvas",
     shortLabel: "Dark",
     detail: "Dark canvas for bright thematic overlays",
-    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>',
-    maxNativeZoom: 20,
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    attribution: 'Tiles &copy; <a href="https://www.esri.com" target="_blank" rel="noreferrer">Esri</a>, HERE, Garmin &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
+    licence: "free to use with attribution · not open data",
+    maxNativeZoom: 19,
     tone: "dark",
   },
   satellite: {
-    label: "NASA Earth",
+    label: "Esri World Imagery",
     shortLabel: "Satellite",
-    detail: "VIIRS true colour · 08 Aug 2026",
-    url: "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/2026-08-08/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg",
-    attribution: 'Imagery &copy; <a href="https://www.earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA EOSDIS GIBS</a>',
-    maxNativeZoom: 9,
+    detail: "High-resolution imagery for boundary and building checks",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution: 'Imagery &copy; <a href="https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9" target="_blank" rel="noreferrer">Esri</a>, Maxar, Earthstar Geographics and the GIS user community',
+    licence: "free to use with attribution · not open data",
+    maxNativeZoom: 19,
     tone: "satellite",
+  },
+  daily: {
+    label: "NASA daily true colour",
+    shortLabel: "Daily satellite",
+    detail: "Recent national cloud, flood and land-surface context",
+    url: "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/{date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg",
+    attribution: 'Imagery &copy; <a href="https://www.earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA EOSDIS GIBS</a>',
+    licence: "public domain · NASA open data",
+    maxNativeZoom: 9,
+    tone: "daily",
   },
 };
 
@@ -229,6 +256,8 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
         maxZoom: 19,
         zoomControl: !compact,
         attributionControl: true,
+        maxBounds: L.latLngBounds(RWANDA_VIEW_BOUNDS),
+        maxBoundsViscosity: 0.5,
         dragging: !compact,
         scrollWheelZoom: !compact,
         doubleClickZoom: !compact,
@@ -267,7 +296,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     if (!ready || !L || !map) return;
     baseLayerRef.current?.remove();
     const config = BASEMAPS[basemap];
-    const layer = L.tileLayer(config.url, { maxNativeZoom: config.maxNativeZoom, maxZoom: 19, minZoom: 5, attribution: config.attribution });
+    const layer = L.tileLayer(config.url, { maxNativeZoom: config.maxNativeZoom, maxZoom: 19, minZoom: 5, noWrap: true, attribution: config.attribution, ...(config.url.includes("{date}") ? { date: recentImageryDate() } : {}) });
     setBasemapStatus("loading");
     layer.once("tileload", () => setBasemapStatus("ready"));
     layer.once("tileerror", () => setBasemapStatus("error"));
@@ -282,31 +311,28 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
     if (!ready || !L || !map || !destination || compact) return;
     destination.clearLayers();
     const activeLayers = onlineLayerIds.map(findRwandaOnlineLayer).filter((layer) => layer !== undefined);
-    const imageAttributions: string[] = [];
+    const nationalBounds = L.latLngBounds(RWANDA_BOUNDS);
     activeLayers.forEach((layer) => {
       layerStatusRef.current?.(layer.id, "loading");
       const opacity = Math.max(0.12, Math.min(1, layer.opacity * onlineLayerOpacity));
       const attribution = `<a href="${layer.sourceUrl}" target="_blank" rel="noreferrer">${layer.provider}</a> · ${layer.licence}`;
-      if (layer.kind === "arcgis-image") {
-        const imageLayer = L.imageOverlay(buildArcGisExportUrl(layer), RWANDA_IMAGE_BOUNDS, { opacity, alt: layer.title, className: "rwanda-online-image" });
-        imageLayer.on("load", () => { layerStatusRef.current?.(layer.id, "ready"); notifyRef.current?.(`${layer.shortTitle} loaded from ${layer.provider}`); });
-        imageLayer.on("error", () => { layerStatusRef.current?.(layer.id, "error"); notifyRef.current?.(`${layer.shortTitle} is temporarily unavailable from its source`); });
-        imageLayer.addTo(destination).bringToBack();
-        map.attributionControl.addAttribution(attribution);
-        imageAttributions.push(attribution);
-      } else if (layer.wmsLayer) {
-        const wmsOptions = { layers: layer.wmsLayer, format: "image/png", transparent: true, opacity, attribution, version: "1.3.0", ...(layer.wmsTime ? { time: layer.wmsTime } : {}) };
-        const wmsLayer = L.tileLayer.wms(layer.serviceUrl, wmsOptions);
-        wmsLayer.once("tileload", () => { layerStatusRef.current?.(layer.id, "ready"); notifyRef.current?.(`${layer.shortTitle} loaded from ${layer.provider}`); });
-        wmsLayer.on("tileerror", () => { layerStatusRef.current?.(layer.id, "error"); notifyRef.current?.(`${layer.shortTitle} has unavailable tiles at this zoom`); });
-        wmsLayer.addTo(destination).bringToBack();
-      }
+      // Both source families are requested one tile at a time so each image covers exactly the
+      // extent it was asked for, stays sharp at every zoom, and is never fetched outside Rwanda.
+      const shared = { opacity, attribution, bounds: nationalBounds, minZoom: 5, maxZoom: 19 };
+      const overlay = layer.kind === "arcgis-image"
+        ? createArcGisDynamicLayer(L, layer.serviceUrl, { ...shared, layerIds: layer.layerIds, detectRetina: true })
+        : layer.wmsLayer
+          ? L.tileLayer.wms(layer.serviceUrl, { ...shared, layers: layer.wmsLayer, format: "image/png", transparent: true, version: "1.3.0", ...(layer.wmsTime ? { time: layer.wmsTime } : {}) })
+          : undefined;
+      if (!overlay) return;
+      overlay.once("load", () => { layerStatusRef.current?.(layer.id, "ready"); notifyRef.current?.(`${layer.shortTitle} loaded from ${layer.provider}`); });
+      overlay.on("tileerror", () => { layerStatusRef.current?.(layer.id, "error"); notifyRef.current?.(`${layer.shortTitle} has unavailable tiles at this zoom`); });
+      overlay.addTo(destination).bringToBack();
     });
     baseLayerRef.current?.bringToBack();
     const layerSet = onlineLayerIds.join("|");
-    if (layerSet && layerSet !== lastOnlineLayerSetRef.current) map.fitBounds(RWANDA_IMAGE_BOUNDS, { padding: [18, 18] });
+    if (layerSet && layerSet !== lastOnlineLayerSetRef.current) map.fitBounds(nationalBounds, { padding: [18, 18] });
     lastOnlineLayerSetRef.current = layerSet;
-    return () => imageAttributions.forEach((attribution) => map.attributionControl.removeAttribution(attribution));
   }, [compact, onlineLayerIds, onlineLayerOpacity, ready]);
 
   useEffect(() => {
@@ -612,7 +638,7 @@ export default function OpenStreetMap({ compact = false, selected, onSelect, onC
         {visibleLayers?.osmPlaces && <button className="osm-refresh-places" onClick={() => setPlacesReload((value) => value + 1)} disabled={placesLoading}>{placesLoading ? "Loading open places…" : `Refresh OSM places · ${osmFeatures.length}`}</button>}
         {measurement && <div className="osm-measurement"><span>{activeTool === "distance" ? "Distance" : "Area"}</span><b>{measurement}</b><button onClick={() => { setActiveTool("select"); setMeasurement(""); }}>Done</button></div>}
         {coordinateReadout && <div className="osm-coordinate-readout"><b>WGS84 {coordinateReadout.lat.toFixed(6)}, {coordinateReadout.lng.toFixed(6)}</b><span>UTM 36S {toUtm36S([coordinateReadout.lng, coordinateReadout.lat]).map((value) => value.toFixed(1)).join(" · ")}</span></div>}
-        <div className="osm-map-status"><i />{BASEMAPS[basemap].label} · open data{onlineLayerIds.length ? ` · ${onlineLayerIds.length} Rwanda ${onlineLayerIds.length === 1 ? "layer" : "layers"}` : ""}{visibleLayers?.parcels ? " + synthetic parcels" : ""}{analysisFeatures ? " + analysis results" : ""}</div>
+        <div className="osm-map-status"><i />{BASEMAPS[basemap].label} · {BASEMAPS[basemap].licence}{onlineLayerIds.length ? ` · ${onlineLayerIds.length} Rwanda ${onlineLayerIds.length === 1 ? "layer" : "layers"}` : ""}{visibleLayers?.parcels ? " + synthetic parcels" : ""}{analysisFeatures ? " + analysis results" : ""}</div>
       </>}
     </>}
   </div>;
